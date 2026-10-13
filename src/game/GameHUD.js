@@ -8,6 +8,9 @@ import { GIVERS, currentQuest, questProgress } from './Quests.js';
 import { LEAGUES, RIVALS, DURATION, standings } from './Tournament.js';
 import { errorText } from '../net/NetClient.js';
 import { DEV } from '../core/DevMode.js';
+import { WEATHER } from '../weather/WeatherState.js';
+import { clockText } from '../core/WorldClock.js';
+import { icon } from '../ui/icons.js';
 import { t } from '../i18n/index.js';
 
 // DOM for the fishing game, in the look of the rest of the HUD (ui/ui.css tokens, .tw-glass):
@@ -76,6 +79,9 @@ const CSS = /* css */`
 .gm-mini { font: 500 var(--tw-fs-sm) var(--tw-font); color: var(--tw-ink-2); background: var(--tw-fill); border: 1px solid var(--tw-line); border-radius: 999px; padding: 2px var(--tw-2); cursor: pointer; }
 .gm-gauge { display: none; align-items: center; gap: var(--tw-2); color: var(--tw-ink-2); font-size: var(--tw-fs-md); }
 .gm-gauge.is-on { display: flex; }
+.gm-clock svg { width: 1.15em; height: 1.15em; color: var(--tw-sun); }
+.gm-clock.is-night svg { color: #b8c8ff; }
+.gm-clock.is-wet svg { color: var(--tw-aqua); }
 .gm-gauge b { font-family: var(--tw-mono); font-weight: 500; color: var(--tw-ink); }
 .gm-fuel-bar > span { background: var(--tw-sun); }
 .gm-fuel.is-low .gm-fuel-bar > span { background: var(--tw-coral); }
@@ -229,11 +235,15 @@ export class GameHUD {
 		style.textContent = CSS;
 		document.head.append( style );
 
-		this.purse = h( 'div', 'gm-purse tw-glass', `<span class="gm-money">$0</span><span class="gm-cooler"><span class="gm-cooler-label">${ t( 'Cooler' ) }</span><span class="gm-cooler-bar"><span></span></span><span class="gm-cooler-kg">0 / 30 kg</span></span><span class="gm-gauge gm-fuel"><span>${ t( 'Fuel' ) }</span><span class="gm-cooler-bar gm-fuel-bar"><span></span></span><b class="gm-fuel-l">40 L</b></span><span class="gm-gauge gm-sonar"><span>${ t( 'Sonar' ) }</span><b class="gm-sonar-d">0 m</b><span class="gm-sonar-dots"></span></span><span class="gm-gauge gm-derby"><span>${ t( 'Tournament' ) }</span><b class="gm-derby-t">5:00</b><b class="gm-derby-s">0 kg</b><span class="gm-derby-p"></span></span>` );
+		this.purse = h( 'div', 'gm-purse tw-glass', `<span class="gm-gauge gm-clock"><i class="gm-clock-i"></i><b class="gm-clock-t">12:00</b><span class="gm-clock-w"></span></span><span class="gm-money">$0</span><span class="gm-cooler"><span class="gm-cooler-label">${ t( 'Cooler' ) }</span><span class="gm-cooler-bar"><span></span></span><span class="gm-cooler-kg">0 / 30 kg</span></span><span class="gm-gauge gm-fuel"><span>${ t( 'Fuel' ) }</span><span class="gm-cooler-bar gm-fuel-bar"><span></span></span><b class="gm-fuel-l">40 L</b></span><span class="gm-gauge gm-sonar"><span>${ t( 'Sonar' ) }</span><b class="gm-sonar-d">0 m</b><span class="gm-sonar-dots"></span></span><span class="gm-gauge gm-derby"><span>${ t( 'Tournament' ) }</span><b class="gm-derby-t">5:00</b><b class="gm-derby-s">0 kg</b><span class="gm-derby-p"></span></span>` );
 		this.derbyEl = this.purse.querySelector( '.gm-derby' );
 		this.fuelEl = this.purse.querySelector( '.gm-fuel' );
 		this.fuelBar = this.purse.querySelector( '.gm-fuel-bar > span' );
 		this.fuelL = this.purse.querySelector( '.gm-fuel-l' );
+		this.clockEl = this.purse.querySelector( '.gm-clock' );
+		this.clockI = this.purse.querySelector( '.gm-clock-i' );
+		this.clockT = this.purse.querySelector( '.gm-clock-t' );
+		this.clockW = this.purse.querySelector( '.gm-clock-w' );
 		this.sonarEl = this.purse.querySelector( '.gm-sonar' );
 		this.sonarD = this.purse.querySelector( '.gm-sonar-d' );
 		this.sonarDots = this.purse.querySelector( '.gm-sonar-dots' );
@@ -306,7 +316,35 @@ export class GameHUD {
 	}
 
 	// per frame
-	update( { fight, casting, power, bite, aiming, fuel = null, sonar = null, tourney = null } ) {
+	update( { fight, casting, power, bite, aiming, fuel = null, sonar = null, tourney = null, clock = null } ) {
+
+		// the clock and the weather (core/WorldClock.js): written only when the minute or the sky changes
+		if ( clock ) {
+
+			const text = clockText( clock.hour ), night = clock.hour < 6 || clock.hour >= 19;
+			const key = `${ text }|${ clock.weather }|${ night }`;
+			if ( key !== this._clockKey ) {
+
+				this._clockKey = key;
+				this.clockEl.classList.add( 'is-on' );
+				this.clockT.textContent = text;
+				const w = clock.weather;
+				const ic = w === 'Storm' ? 'storm' : w === 'Rain' ? 'droplet' : w === 'Drizzle' ? 'cloud' : night ? 'moon' : 'sun';
+				if ( ic !== this._clockIcon ) {
+
+					this._clockIcon = ic;
+					this.clockI.innerHTML = icon( ic );
+
+				}
+
+				this.clockEl.classList.toggle( 'is-night', night && ( ! w || w === 'Clear' ) );
+				this.clockEl.classList.toggle( 'is-wet', !! w && w !== 'Clear' );
+				this.clockW.textContent = w && WEATHER[ w ] ? t( WEATHER[ w ].label ) : '';
+
+			}
+
+		}
+
 
 		// a tournament running: the clock, your score and place
 		this.derbyEl.classList.toggle( 'is-on', !! tourney );

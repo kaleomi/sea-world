@@ -3,6 +3,7 @@ import { WORLD } from '../world/WorldLayout.js';
 import { OPEN_SEA } from '../world/islands/index.js';
 import { FISH, ZONE_FISH } from './FishTable.js';
 import { zoneAt, zoneHabitat, chartDepth } from './Zones.js';
+import { forecast } from '../core/WorldClock.js';
 import { habitatAt, pickSpecies, rollWeight, biteDelay } from './Bites.js';
 import { CatchMinigame } from './CatchMinigame.js';
 import { GameState } from './GameState.js';
@@ -52,6 +53,15 @@ export class Game {
 		this.chandlery = new Chandlery( { scene: app.scene, terrain: app.terrainData, colliders: app.colliders, material: this.stand.material } );
 		this.vendors = [ this.stand.vendor, this.chandlery.vendor ];
 		this.addQuestGivers();
+		this.devFish = null; // { id, keep }: the Developer tab's pick for the next bite
+		// the shared weather changing (weather/WorldWeather.js): say so
+		if ( app.worldWeather ) app.worldWeather.onChange = ( weather, sea, first ) => {
+
+			if ( ! first ) this.toast( t( WEATHER_NOW[ weather ] ), 4200 );
+
+		};
+		this._fcT = 0;
+		this._warned = null;
 		// cruise control at the helm (Player.updateBoat, C)
 		if ( app.player ) app.player.onCruise = ( c ) => this.toast( c ? t( 'Cruise control on · C or S to stop' ) : t( 'Cruise control off' ), 1800 );
 		// boat upgrades: engine (thrust / top speed) and deck floodlights for night fishing
@@ -404,6 +414,7 @@ export class Game {
 
 		const aboard = p.mode === 'boat' || p.mode === 'deck';
 		this.updateTournament( dt );
+		this.updateForecast( dt );
 		const tour = this.state.circuit.active;
 		// the catch card's live fish portrait (or one queued thumbnail)
 		if ( this.hud && this.hud.portrait ) this.hud.portrait.update( dt );
@@ -416,9 +427,37 @@ export class Game {
 			bite: this.bite && this.bite.phase === 'take',
 			aiming: rod.equipped,
 			tourney: tour ? { left: tour.left, score: tour.score, place: place( this.state.circuit ) } : null,
+			clock: { hour: this.hour, weather: this.weatherNow() },
 		} );
 		if ( this.minimap ) this.minimap.update( dt );
 		if ( this.guide ) this.guide.update( dt );
+
+	}
+
+	// the weather showing now: the forecast's spell, or (set by hand) the weather panel's preset
+	weatherNow() {
+
+		const ww = this.app.worldWeather, w = this.app.weather;
+		if ( ww && ww.weather && ww.current ) return ww.current.weather;
+		return w && w.params && WEATHER_NOW[ w.params.preset ] ? w.params.preset : null;
+
+	}
+
+	// once a second: a heads-up when a storm is on the way (the forecast itself is on the map, M)
+	updateForecast( dt ) {
+
+		this._fcT -= dt;
+		const ww = this.app.worldWeather;
+		if ( this._fcT > 0 || ! ww || ! ww.weather ) return;
+		this._fcT = 1;
+		const [ now, next ] = forecast( Date.now(), 2 );
+		const left = ( next.start - Date.now() ) / 1000;
+		if ( next.weather === 'Storm' && now.weather !== 'Storm' && left < 90 && this._warned !== next.block ) {
+
+			this._warned = next.block;
+			this.toast( t( 'Forecast: a thunderstorm in about a minute · the sea will get rough' ), 5000 );
+
+		}
 
 	}
 
@@ -659,7 +698,29 @@ export class Game {
 
 		}
 
-		this.bite = { phase: 'wait', t: biteDelay( this.habitat(), this.hour, Math.random, this.rain() ) };
+		this.bite = { phase: 'wait', t: this.devFish ? 1.5 : biteDelay( this.habitat(), this.hour, Math.random, this.rain() ) };
+
+	}
+
+	// the species a developer picked for the next bite (cleared after one unless "every time" is on)
+	takeDevFish() {
+
+		const d = this.devFish;
+		if ( ! d || ! FISH[ d.id ] ) return null;
+		if ( ! d.keep ) {
+
+			this.devFish = null;
+			const ui = this.app.ui;
+			if ( ui && ui.s ) {
+
+				ui.s.devFish = '';
+				ui.ui.refresh();
+
+			}
+
+		}
+
+		return d.id;
 
 	}
 
@@ -688,8 +749,10 @@ export class Game {
 
 			const h = this.habitat();
 			const isle = this.islandAt( this.rod.bobber.x, this.rod.bobber.z );
-			// the island's own fish, plus the open-ocean ones (they only bite where their zone is)
-			const species = pickSpecies( h, this.hour, Math.random, isle.species ? isle.species.concat( ZONE_FISH ) : undefined );
+			// the island's own fish, plus the open-ocean ones (they only bite where their zone is); a
+			// developer can pick the next one (the Developer tab), wherever the bobber is
+			const dev = this.takeDevFish();
+			const species = dev || pickSpecies( h, this.hour, Math.random, isle.species ? isle.species.concat( ZONE_FISH ) : undefined );
 			if ( ! species ) {
 
 				b.t = 8;
@@ -698,7 +761,7 @@ export class Game {
 			}
 
 			// now and then, in its own conditions, a legend takes the bait instead (Legends.js)
-			const legend = rollLegend( { habitat: h, hour: this.hour, rain: this.rain(), tide: this.app.tide }, this.state.legends, Math.random, isle.legends || undefined );
+			const legend = dev ? null : rollLegend( { habitat: h, hour: this.hour, rain: this.rain(), tide: this.app.tide }, this.state.legends, Math.random, isle.legends || undefined );
 			b.legend = legend;
 			b.species = legend ? LEGENDS[ legend ].species : species;
 			b.kg = legend ? legendWeight( legend ) : rollWeight( species );
@@ -835,6 +898,13 @@ export class Game {
 
 // 1st, 2nd, 3rd, 4th: for the tournament result
 const PLACES = [ '1st', '2nd', '3rd', '4th' ];
+// the shared weather turning (WorldWeather.onChange), and the HUD clock's weather word
+const WEATHER_NOW = {
+	Clear: 'The weather clears up',
+	Drizzle: 'A light drizzle sets in',
+	Rain: 'It starts to rain · fish bite better in the rain',
+	Storm: 'A thunderstorm is here · rough seas, take care in the boat',
+};
 // out at sea, crossing into an ocean zone (Zones.js)
 const ZONE_TOASTS = {
 	coastal: 'Coastal waters · jacks, barracuda, snapper, blackfin and mahi',

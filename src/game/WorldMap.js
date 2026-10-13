@@ -2,6 +2,9 @@ import { STAND } from './FishStand.js';
 import { CHANDLERY } from './Chandlery.js';
 import { ISLANDS } from '../world/islands/index.js';
 import { paintZones, ZONE_LABELS, ZONE_BY_ID, TRENCH } from './Zones.js';
+import { forecast } from '../core/WorldClock.js';
+import { WEATHER } from '../weather/WeatherState.js';
+import { icon } from '../ui/icons.js';
 import { t } from '../i18n/index.js';
 
 // The full map (M): every island, north up, drawn from the minimap's baked canvases into one canvas
@@ -21,6 +24,14 @@ const CSS = /* css */`
 .gm-world-view { position: relative; flex: 1; min-height: 0; background: #0c2c4e; cursor: grab; }
 .gm-world-view.is-drag { cursor: grabbing; }
 .gm-world-view canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.gm-forecast { position: absolute; top: var(--tw-3); left: var(--tw-3); min-width: 230px; padding: var(--tw-2) var(--tw-3); border-radius: 10px;
+	background: rgba(6, 16, 26, 0.78); box-shadow: 0 0 0 1px rgba(255,255,255,0.08); pointer-events: none; font-size: var(--tw-fs-sm); color: var(--tw-ink-2); }
+.gm-forecast h4 { margin: 0 0 6px; font: 600 var(--tw-fs-md, 14px) var(--tw-font); color: var(--tw-ink); }
+.gm-forecast-row { display: grid; grid-template-columns: 5.2em 1.4em 1fr; align-items: center; gap: 6px; padding: 3px 0; }
+.gm-forecast-row.is-now { color: var(--tw-ink); font-weight: 600; }
+.gm-forecast-row svg { width: 1.2em; height: 1.2em; }
+.gm-forecast-row small { color: var(--tw-ink-3); }
+.gm-forecast-row.is-storm { color: #ffb38a; }
 `;
 
 const MARK = { joe: '#f3c24f', marta: '#5fd3cf', quest: '#f0a35a', ready: '#ffd35a', done: '#b9b2a4', boat: '#f2efe6' };
@@ -44,7 +55,8 @@ export class WorldMap {
 		style.textContent = CSS;
 		document.head.append( style );
 		this.el = h( 'div', 'gm-world', `<div class="gm-world-box tw-glass"><div class="gm-world-head"><b>${ t( 'Map' ) }</b><span>${ t( 'Scroll to zoom · drag to move · M or Esc to close' ) }</span></div>
-			<div class="gm-world-view"><canvas></canvas></div></div>` );
+			<div class="gm-world-view"><canvas></canvas><div class="gm-forecast"></div></div></div>` );
+		this.forecastEl = this.el.querySelector( '.gm-forecast' );
 		this.view = this.el.querySelector( '.gm-world-view' );
 		this.canvas = this.el.querySelector( 'canvas' );
 		this.ctx = this.canvas.getContext( '2d' );
@@ -145,15 +157,51 @@ export class WorldMap {
 
 			} catch ( e ) { /* ignore */ }
 
+			this._fcT = 0;
 			this.update();
 
 		}
 
 	}
 
+	// the weather forecast card (the shared schedule, core/WorldClock.js): now and the next spells, each
+	// with the real minutes until it starts and the sea it brings
+	renderForecast() {
+
+		const ww = this.game.app.worldWeather;
+		if ( ! ww || ! ww.weather ) {
+
+			this.forecastEl.style.display = 'none';
+			return;
+
+		}
+
+		this.forecastEl.style.display = '';
+		const now = Date.now();
+		const rows = forecast( now, 6 ).map( ( f, i ) => {
+
+			const w = f.weather;
+			const ic = w === 'Storm' ? 'storm' : w === 'Rain' ? 'droplet' : w === 'Drizzle' ? 'cloud' : 'sun';
+			const when = i === 0 ? t( 'Now' ) : t( 'in {m} min', { m: Math.max( 1, Math.round( ( f.start - now ) / 60000 ) ) } );
+			return `<div class="gm-forecast-row${ i === 0 ? ' is-now' : '' }${ w === 'Storm' ? ' is-storm' : '' }"><span>${ when }</span>${ icon( ic ) }<span>${ t( WEATHER[ w ].label ) } <small>· ${ t( f.sea ) }</small></span></div>`;
+
+		} ).join( '' );
+		const html = `<h4>${ t( 'Weather forecast' ) }</h4>${ rows }`;
+		if ( html !== this._fcHtml ) this.forecastEl.innerHTML = this._fcHtml = html;
+
+	}
+
 	update() {
 
 		if ( ! this.open ) return;
+		this._fcT = ( this._fcT || 0 ) - 1;
+		if ( this._fcT <= 0 ) {
+
+			this._fcT = 30;
+			this.renderForecast();
+
+		}
+
 		const dpr = Math.min( 2, window.devicePixelRatio || 1 );
 		const W = this.view.clientWidth, H = this.view.clientHeight;
 		if ( ! W || ! H ) return;

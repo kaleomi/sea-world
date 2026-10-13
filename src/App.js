@@ -56,6 +56,7 @@ import { SeaDetail } from './ocean/SeaDetail.js';
 import { MarineSnow } from './fx/MarineSnow.js';
 import { AirMotes } from './fx/AirMotes.js';
 import { Weather, WEATHER } from './weather/Weather.js';
+import { WorldWeather } from './weather/WorldWeather.js';
 
 import { Underwater, LENS_REACH } from './post/Underwater.js';
 import { PostFX } from './post/PostFX.js';
@@ -342,6 +343,13 @@ fn terrainWetness( xz: vec2f, h: f32 ) -> vec2f {
 			// keep the settings panel's cloud-cover slider in step with the weather
 			onClouds: ( v ) => { if ( this.ui ) { this.ui.s.clouds = v; this.ui.ui.refresh(); } },
 		} );
+		// the shared world clock and weather schedule (core/WorldClock.js): the hour and the weather
+		// follow it unless a test view or a developer sets them by hand
+		this.worldWeather = new WorldWeather( this, {
+			clock: ! qs.has( 'bench' ) && ! qs.has( 'time' ),
+			weather: ! qs.has( 'bench' ) && ! qs.has( 'weather' ),
+		} );
+		if ( qs.has( 'time' ) ) this.settings.timeOfDay = ( ( Number( qs.get( 'time' ) ) % 24 ) + 24 ) % 24 || 0;
 		this.boatCtl = new BoatController( { model: this.boat, query: this.query, terrain: this.terrainData, colliders: this.colliders } );
 		this.boatSpray = new BoatSpray( { boat: this.boatCtl, spray: this.spray } );
 		// humpback cruising the deep water around the island (model fetched from public/models/whale)
@@ -431,6 +439,7 @@ fn terrainWetness( xz: vec2f, h: f32 ) -> vec2f {
 		this.profiler.track( 'fft columns', this.fft.columnKernel );
 		this.profiler.track( 'sky view', this.atmosphere.skyViewKernel );
 
+		this.worldWeather.updateClock();
 		this.updateSun();
 		installDebugViews( this );
 		window.__app = this;
@@ -542,10 +551,40 @@ fn terrainWetness( xz: vec2f, h: f32 ) -> vec2f {
 
 	}
 
-	// T: let the day run (about 8 minutes per day) or stop it
+	// T: stop the clock, or set it running again (back on the shared world clock if it was on it)
 	toggleTime() {
 
-		const s = this.settings;
+		const s = this.settings, ww = this.worldWeather;
+		if ( ww && ww.clock ) {
+
+			ww.setClock( false );
+			s.timeSpeed = 0;
+			if ( this.ui ) {
+
+				this.ui.s.advance = false;
+				this.ui.ui.refresh();
+				this.ui.ui.toast( 'Time paused' );
+
+			}
+
+			return;
+
+		}
+
+		if ( ww && s.timeSpeed === 0 ) {
+
+			ww.setClock( true );
+			if ( this.ui ) {
+
+				this.ui.ui.refresh();
+				this.ui.ui.toast( 'Time running' );
+
+			}
+
+			return;
+
+		}
+
 		if ( s.timeSpeed !== 0 ) {
 
 			this._timeSpeed = s.timeSpeed;
@@ -670,6 +709,7 @@ fn terrainWetness( xz: vec2f, h: f32 ) -> vec2f {
 		if ( this.playing && this.quality ) this.quality.update( dt );
 		G.dt.value = dt;
 		G.time.value += dt;
+		if ( this.worldWeather ) this.worldWeather.update( dt );
 		if ( s.timeSpeed !== 0 ) s.timeOfDay = ( s.timeOfDay + dt * s.timeSpeed + 24 ) % 24;
 
 		// ---- tide: the single writer of frame.seaLevel, before anything reads the water this

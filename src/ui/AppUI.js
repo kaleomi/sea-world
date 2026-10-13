@@ -7,6 +7,7 @@ import { G } from '../core/Globals.js';
 import { GroundBounce } from '../materials/GroundBounce.js';
 import { getLocale, setLocale, LOCALES, t } from '../i18n/index.js';
 import { DEV } from '../core/DevMode.js';
+import { FISH, FISH_IDS } from '../game/FishTable.js';
 
 // Binds the Tidewater UI (panel + HUD) to the running app.
 const SEA = {
@@ -93,6 +94,32 @@ export class AppUI {
 
 		};
 
+		// the world weather (weather/WorldWeather.js) moves the sea a step toward a preset; a hand on any
+		// of the sea or weather controls takes the weather over from the forecast
+		this.seaToward = ( name, k = 1 ) => {
+
+			const P = SEA[ name ];
+			if ( ! P ) return;
+			for ( const key in P ) s[ key ] += ( P[ key ] - s[ key ] ) * k;
+			spectrum();
+			whitecaps();
+			fft.choppiness.value = s.chop;
+			shore.amplitude.value = s.surf;
+			shore.period.value = s.period;
+
+		};
+		const byHand = () => {
+
+			const ww = app.worldWeather;
+			if ( ww && ww.weather ) {
+
+				ww.setWeather( false );
+				ui.refresh();
+
+			}
+
+		};
+
 		// ---------------------------------------------------------------- Ocean
 		const ocean = ui.addTab( 'ocean', 'Ocean', 'ocean' );
 		const sea = ocean.addFolder( 'Sea state', { icon: 'wind' } );
@@ -102,6 +129,7 @@ export class AppUI {
 				label: k, icon: k.toLowerCase(),
 				apply: () => {
 
+					byHand();
 					const p = SEA[ k ];
 					Object.assign( s, p );
 					spectrum();
@@ -115,6 +143,7 @@ export class AppUI {
 		} );
 		sea.addSlider( { label: 'Wind speed', object: s, key: 'wind', min: 0.5, max: 30, step: 0.1, unit: 'm/s', tooltip: 'Wind 10 m above the sea. Drives the local wind waves, whitecaps and spray.', onChange: () => {
 
+			byHand();
 			spectrum();
 			whitecaps();
 
@@ -173,10 +202,18 @@ export class AppUI {
 		// ---------------------------------------------------------------- Sky
 		const sky = ui.addTab( 'sky', 'Sky', 'sky' );
 		const sun = sky.addFolder( 'Sun', { icon: 'clock' } );
+		if ( app.worldWeather ) sun.addToggle( { label: 'Follow the world clock', object: app.worldWeather, key: 'clock', tooltip: 'Everyone on the sea shares one clock (a day is about 18 minutes). Moving the time by hand switches this off.', onChange: ( v ) => app.worldWeather.setClock( v ) } );
 		sun.addTimeOfDay( { object: app.settings, key: 'timeOfDay' } );
 		sun.addSlider( { label: 'Sun azimuth', object: app.settings, key: 'sunAzimuth', min: - 180, max: 180, step: 1, format: ( v ) => `${ Math.round( v ) }°`, tooltip: 'Turns the sun\'s path around the island (0 = the real path: rises in the east, sets in the west).' } );
 		let speed = null;
 		sun.addToggle( { label: 'Advance time', object: s, key: 'advance', onChange: ( v ) => {
+
+			if ( v && app.worldWeather && app.worldWeather.clock ) {
+
+				app.worldWeather.setClock( false );
+				ui.refresh();
+
+			}
 
 			app.settings.timeSpeed = v ? s.timeSpeed : 0;
 			speed.setVisible( v );
@@ -209,18 +246,19 @@ export class AppUI {
 			const w = app.weather;
 			const wx = sky.addFolder( 'Weather', { icon: 'cloud', open: false } );
 			const pct = ( v ) => `${ Math.round( v * 100 ) }%`;
+			if ( app.worldWeather ) wx.addToggle( { label: 'Follow the forecast', object: app.worldWeather, key: 'weather', tooltip: 'The weather and the sea change on a schedule everyone shares. Picking a preset or moving a slider switches this off.', onChange: ( v ) => app.worldWeather.setWeather( v ) } );
 			wx.addPresets( {
 				label: 'Weather conditions', active: w.params.preset,
 				presets: WEATHER_IDS.map( ( k ) => ( {
 					// `id` (not the label) is what `active` is matched against, so the
 					// label is free to be translated
 					id: k, label: WEATHER[ k ].label, icon: k.toLowerCase(),
-					apply: () => { w.setPreset( k ); ui.refresh(); },
+					apply: () => { byHand(); w.setPreset( k ); ui.refresh(); },
 				} ) ),
 			} );
-			wx.addSlider( { label: 'Rainfall', object: w.params, key: 'rain', min: 0, max: 1, step: 0.01, format: pct, tooltip: 'Rain falling around the camera. It takes about half a minute to arrive or clear; exposed surfaces wet up while it rains and dry off slowly afterwards. Fish feed better in the rain.', onChange: ( v ) => w.setRain( v ) } );
-			wx.addSlider( { label: 'Lightning', object: w.params, key: 'lightning', min: 0, max: 1, step: 0.01, format: pct, tooltip: 'How often the storm throws a strike (it needs to be raining), with thunder delayed by the distance.', onChange: ( v ) => w.setLightning( v ) } );
-			wx.addSlider( { label: 'Gusts', object: w.params, key: 'gust', min: 0, max: 1, step: 0.01, format: pct, tooltip: 'Squalls: how much the wind swells and drops on top of the sea state, carrying the rain sideways.', onChange: ( v ) => w.setGust( v ) } );
+			wx.addSlider( { label: 'Rainfall', object: w.params, key: 'rain', min: 0, max: 1, step: 0.01, format: pct, tooltip: 'Rain falling around the camera. It takes about half a minute to arrive or clear; exposed surfaces wet up while it rains and dry off slowly afterwards. Fish feed better in the rain.', onChange: ( v ) => { byHand(); w.setRain( v ); } } );
+			wx.addSlider( { label: 'Lightning', object: w.params, key: 'lightning', min: 0, max: 1, step: 0.01, format: pct, tooltip: 'How often the storm throws a strike (it needs to be raining), with thunder delayed by the distance.', onChange: ( v ) => { byHand(); w.setLightning( v ); } } );
+			wx.addSlider( { label: 'Gusts', object: w.params, key: 'gust', min: 0, max: 1, step: 0.01, format: pct, tooltip: 'Squalls: how much the wind swells and drops on top of the sea state, carrying the rain sideways.', onChange: ( v ) => { byHand(); w.setGust( v ); } } );
 
 		}
 
@@ -340,9 +378,32 @@ export class AppUI {
 		s.ssr = app.waterMaterial.params.ssr.value > 0.5;
 		qCtl.push( quality.addToggle( { label: 'Water reflections', object: s, key: 'ssr', tooltip: 'Screen-space reflections of the pier, boats and hills on the water.', onChange: ( v ) => { app.waterMaterial.params.ssr.value = v ? 1 : 0; } } ) );
 
+		// ---------------------------------------------------------------- Developer: test tools
+		const devTab = ui.addTab( 'dev', 'Developer', 'cpu' );
+		const cash = devTab.addFolder( 'Money', { icon: 'gauge' } );
+		const give = ( n ) => {
+
+			const g = app.game;
+			if ( ! g ) return;
+			g.state.money += n;
+			g.state.save();
+			g.state.emit();
+			ui.toast( t( 'Added ${v}', { v: n } ) );
+
+		};
+		for ( const n of [ 100, 1000, 10000, 100000 ] ) cash.addButton( { label: `+$${ n.toLocaleString( 'en-US' ) }`, onClick: () => give( n ) } );
+		const fishing = devTab.addFolder( 'Fishing', { icon: 'fish' } );
+		s.devFish = '';
+		s.devFishKeep = false;
+		fishing.addSelect( { label: 'Next fish', object: s, key: 'devFish', segmented: false, tooltip: 'The next fish to bite, wherever the bobber is (then back to random, unless "Every time" is on).',
+			options: [ { label: 'Random', value: '' }, ...FISH_IDS.map( ( id ) => ( { label: FISH[ id ].name, value: id } ) ) ],
+			onChange: ( v ) => { if ( app.game ) app.game.devFish = v ? { id: v, keep: s.devFishKeep } : null; } } );
+		fishing.addToggle( { label: 'Every time', object: s, key: 'devFishKeep', onChange: ( v ) => { if ( app.game && app.game.devFish ) app.game.devFish.keep = v; } } );
+
 		// ---- what a player sees: the camera, the effects and the performance settings. The sea, shore
-		// and sky controls, the free camera and the side rail are developer tools (core/DevMode.js).
-		const devOnly = [ ocean, shoreTab, sky ];
+		// and sky controls, the free camera, the test tools and the side rail are developer tools
+		// (core/DevMode.js).
+		const devOnly = [ ocean, shoreTab, sky, devTab ];
 		const applyDev = ( on ) => {
 
 			for ( const tab of devOnly ) tab.setVisible( on );

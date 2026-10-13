@@ -108,12 +108,29 @@ fn hookSurface( P: vec3f, N: vec3f, s: ptr<function, Surface> ) {
 
 	}
 
+	// the cloud cover follows the rain: it builds and clears over a minute or so rather than jumping
+	// (the panel's slider still sets it directly; the easing stops once it arrives)
 	_applyClouds() {
 
 		if ( ! this.clouds ) return;
-		const cov = cloudCover( this.params.rain );
-		this.clouds.coverage.value = cov;
-		if ( this.onClouds ) this.onClouds( cov );
+		this._cloudTarget = cloudCover( this.params.rain );
+		this._cloudEase = true;
+
+	}
+
+	_easeClouds( dt ) {
+
+		if ( ! this._cloudEase || ! this.clouds ) return;
+		const c = this.clouds.coverage;
+		const d = this._cloudTarget - c.value;
+		c.value = Math.abs( d ) < 0.002 ? this._cloudTarget : c.value + d * ( 1 - Math.exp( - dt / 25 ) );
+		if ( c.value === this._cloudTarget ) this._cloudEase = false;
+		if ( this.onClouds && ( ! this._cloudEase || Math.abs( c.value - ( this._cloudShown ?? - 1 ) ) > 0.02 ) ) {
+
+			this._cloudShown = c.value;
+			this.onClouds( c.value );
+
+		}
 
 	}
 
@@ -123,6 +140,7 @@ fn hookSurface( P: vec3f, N: vec3f, s: ptr<function, Surface> ) {
 		const before = s.flashCount;
 
 		stepWeather( s, dt, { night: G.night.value, windSpeed: G.windSpeed.value } );
+		this._easeClouds( dt );
 
 		// ---- the lightning: put last frame's clean irradiance back, read the atmosphere's value as
 		// the new base, then add the flash (so nothing accumulates across frames)

@@ -107,7 +107,7 @@ if ( view === 'map' ) {
 	const e = new Array( 16 ).fill( 0 );
 	e[ 8 ] = 0.6; e[ 10 ] = 0.8; // looking north-west-ish
 	game.app = { camera: { matrixWorld: { elements: e }, position: { x: 1900, z: 1300 } }, player: { mode: 'boat' }, boatCtl: { position: { x: 1900, z: 1300 } },
-		net: { remote: { positions: () => [ { x: 300, z: 200, color: '#9b6ad6', name: 'Marisol' } ] } } };
+		net: { remote: { positions: () => [ { x: 300, z: 200, color: '#9b6ad6', name: 'Marisol' } ] } }, worldWeather: { weather: true } };
 	game.givers = Object.values( GIVERS ).map( ( g ) => {
 
 		const o = outer.find( ( q ) => q.id === g.island ), s = beachSpot( o, 0, 0 );
@@ -121,7 +121,7 @@ if ( view === 'map' ) {
 
 }
 const fight = { tension: 0.62, band: [ 0.35, 0.8 ], stamina: 0.55, distance: 11.4, surge: 0.1 };
-h.update( { fuel: { litres: 23, tank: 40 }, sonar: { depth: 12.4, fish: 0.5 }, fight: view === 'fight' ? fight : null, casting: view === 'cast', power: 0.7, bite: view === 'bite', aiming: true, tourney: null } );
+h.update( { fuel: { litres: 23, tank: 40 }, sonar: { depth: 12.4, fish: 0.5 }, fight: view === 'fight' ? fight : null, casting: view === 'cast', power: 0.7, bite: view === 'bite', aiming: true, tourney: null, clock: { hour: 18.6, weather: 'Rain' } } );
 if ( view === 'tour' ) {
 
 	state.tickTournament( 170 );
