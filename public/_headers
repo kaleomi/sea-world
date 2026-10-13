@@ -1,4 +1,0 @@
-# Cloudflare Pages response headers (GitHub Pages ignores this file)
-# Vite puts a content hash in every file name under assets/, so they never change in place
-/assets/*
-  Cache-Control: public, max-age=31536000, immutable
