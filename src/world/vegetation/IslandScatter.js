@@ -31,6 +31,7 @@ export function scatterIsland( island, seed = 7 ) {
 	// the island's land lies well inside its grid
 	const x0 = o.x0 + 40, z0 = o.z0 + 40, x1 = o.x0 + o.size - 40, z1 = o.z0 + o.size - 40;
 	const peak = o.def.terrain.peak || 4;
+	const treeline = o.def.terrain.treeline ?? peak; // trees thin out from 45% to 70% of it (the mesa's top is forest)
 	// low islands (the atoll's islets) are all beach: palms from just above the wet sand, denser
 	const low = peak <= 20, lowest = low ? 1.6 : 1.9;
 
@@ -62,7 +63,7 @@ export function scatterIsland( island, seed = 7 ) {
 		const rock = mask( o.rock, x, z );
 		if ( n.y < 0.72 || rock > 0.3 ) return;
 		const clump = N.fbm( ( x - o.cx ) / 60, ( z - o.cz ) / 60, 3 );
-		const high = smoothstep( peak * 0.45, peak * 0.7, h ); // thinning towards the bare top
+		const high = smoothstep( treeline * 0.45, treeline * 0.7, h ); // thinning towards the bare top
 		const p = ( 0.85 * smoothstep( 5, 10, h ) + 0.1 * clump ) * ( 1 - high ) * ( 1 - smoothstep( 0.15, 0.3, rock ) );
 		if ( rand() > p ) return;
 		const sub = rand() < 0.3;
@@ -84,7 +85,7 @@ export function scatterIsland( island, seed = 7 ) {
 		if ( h < ( low ? 1.9 : 2.3 ) ) return;
 		o.normalAt( x, z, n );
 		if ( n.y < 0.75 || mask( o.rock, x, z ) > 0.35 ) return;
-		const edge = peak > 20 ? smoothstep( 3, 6, h ) * ( 1 - smoothstep( 10, 18, h ) ) + 0.25 * smoothstep( peak * 0.4, peak * 0.6, h ) * ( 1 - smoothstep( peak * 0.7, peak * 0.8, h ) ) : smoothstep( 1.9, 2.6, h );
+		const edge = peak > 20 ? smoothstep( 3, 6, h ) * ( 1 - smoothstep( 10, 18, h ) ) + 0.25 * smoothstep( treeline * 0.4, treeline * 0.6, h ) * ( 1 - smoothstep( treeline * 0.7, treeline * 0.8, h ) ) : smoothstep( 1.9, 2.6, h );
 		if ( rand() > 0.3 * edge * smoothstep( - 0.3, 0.2, N.fbm( ( x - o.cx ) / 25, ( z - o.cz ) / 25, 2 ) ) ) return;
 		const s = 0.75 + rand() * 0.8;
 		const sy = 0.65 + rand() * 0.65;

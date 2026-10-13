@@ -25,6 +25,18 @@ export function terrainCacheKey( seed ) {
 
 }
 
+// the key for an outer island (world/terrain/OuterIsland.js): its id, and a hash of its recipe so an
+// edited island definition misses the old entry even within one build
+export function outerCacheKey( def ) {
+
+	if ( ! BUILD_HASH ) return null;
+	const s = JSON.stringify( [ def.seed, def.size, def.res, def.position, def.terrain ] );
+	let h = 2166136261;
+	for ( let i = 0; i < s.length; i ++ ) h = Math.imul( h ^ s.charCodeAt( i ), 16777619 );
+	return `outer:${ def.id }:${ ( h >>> 0 ).toString( 36 ) }:${ BUILD_HASH }`;
+
+}
+
 // a copy of the generated grids, taken before the village flattens its pads into them
 export function terrainSnapshot( td ) {
 
@@ -89,8 +101,14 @@ export async function loadTerrain( key ) {
 
 }
 
-// store a snapshot under `key` and drop entries from older builds (only one terrain is kept)
-export async function saveTerrain( key, snap ) {
+// store a snapshot under `key` and drop entries from older builds (one terrain per island is kept)
+export function saveTerrain( key, snap ) {
+
+	return saveTerrainEntry( key, snap );
+
+}
+
+export async function saveTerrainEntry( key, snap ) {
 
 	if ( ! key ) return false;
 	try {
@@ -98,7 +116,12 @@ export async function saveTerrain( key, snap ) {
 		const db = await openDB();
 		const tx = db.transaction( STORE, 'readwrite' );
 		const store = tx.objectStore( STORE );
-		store.clear();
+		const keys = store.getAllKeys();
+		keys.onsuccess = () => {
+
+			for ( const k of keys.result ) if ( typeof k === 'string' && ! k.endsWith( ':' + BUILD_HASH ) ) store.delete( k );
+
+		};
 		store.put( snap, key );
 		await done( tx );
 		db.close();

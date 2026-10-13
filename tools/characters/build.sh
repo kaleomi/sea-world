@@ -12,14 +12,17 @@ CLIPS=( idle_neutral_01 idle_breathe_01 idle_look_around_01 gestic_talk_neutral_
 # the players on the shared sea (net/RemotePlayers.js): standing, holding a rod (the umbrella pose), cheering, waving, walking
 PLAYERS=( "Adults/Male_Adult_01:m002:m:player_m1" "Adults/Male_Adult_16:m019:m:player_m2" "Adults/Female_Adult_17:f006:f:player_f1" "Adults/Female_Adult_05:f005:f:player_f2" )
 PCLIPS=( idle_neutral_01 umbrella_idle_01 cheer_01 wave_01 )
+# the quest givers on the outer islands (game/Quests.js): idle, talk, wave; 512² textures (loaded when you sail near)
+NPCS=( "Adults/Male_Adult_12:m007:m:npc_nalu" "Professions/Delivery_Male_01:m112:m:npc_tama" "Adults/Female_Adult_12:f012:f:npc_mira" "Adults/Male_Adult_05:m009:m:npc_oskar" "Adults/Female_Adult_09:f009:f:npc_hilde" "Professions/Gardener_Male_01:m106:m:npc_bram" )
+NCLIPS=( idle_neutral_01 gestic_talk_neutral_01 wave_01 )
 S=Assets/Animations/all_animations_max_motextr_static; XY=Assets/Animations/all_animations_max_motextr_xy
 : > files
-for a in $AVATARS $PLAYERS; do
+for a in $AVATARS $PLAYERS $NPCS; do
 	d=${a%%:*}; n=$(basename $d)
 	echo "Assets/Avatars/$d/Export/$n.fbx" >> files
 	gh api "repos/microsoft/Microsoft-Rocketbox/contents/Assets/Avatars/$d/Textures" --jq '.[].name' | sed "s#^#Assets/Avatars/$d/Textures/#" >> files
 done
-for c in $CLIPS $PCLIPS; do for g in m f; do echo "$S/${g}_$c.max.fbx"; done; done >> files
+for c in $CLIPS $PCLIPS $NCLIPS; do for g in m f; do echo "$S/${g}_$c.max.fbx"; done; done >> files
 for g in m f; do echo "$XY/${g}_walk_neutral_01.max.fbx"; done >> files
 echo LICENSE.md >> files
 tr '\n' '\0' < files | xargs -0 -P 16 -n 1 $HERE/fetch.sh
@@ -37,4 +40,10 @@ for a in $PLAYERS; do
 	clips=(); for c in $PCLIPS; do clips+=$S/${g}_$c.max.fbx; done; clips+=$XY/${g}_walk_neutral_01.max.fbx
 	$BLENDER -b --python $HERE/convert.py -- Assets/Avatars/$d/Export/$n.fbx tex/$p $p $ROOT/public/models/characters/$out.glb $clips
 	python3 $HERE/inplace.py $ROOT/public/models/characters/$out.glb walk_neutral_01
+done
+for a in $NPCS; do
+	d=${a%%:*}; r=${a#*:}; p=${r%%:*}; r=${r#*:}; g=${r%%:*}; out=${r#*:}; n=$(basename $d)
+	$HERE/textures.sh Assets/Avatars/$d/Textures tex512/$p $p 512
+	clips=(); for c in $NCLIPS; do clips+=$S/${g}_$c.max.fbx; done
+	$BLENDER -b --python $HERE/convert.py -- Assets/Avatars/$d/Export/$n.fbx tex512/$p $p $ROOT/public/models/characters/$out.glb $clips
 done

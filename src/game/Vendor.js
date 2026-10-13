@@ -36,7 +36,22 @@ export class Vendor {
 		this.character = null;
 		this.talking = false;
 		this._near = false;
-		if ( character ) this.loadCharacter( character.url, character ).catch( ( e ) => console.warn( 'Vendor: character failed to load', e ) );
+		// character.lazy: loaded once the player comes within character.range (loadWhenNear), so the far
+		// islands' people cost nothing until you sail out to them
+		this._pending = character && character.lazy ? character : null;
+		if ( character && ! character.lazy ) this.loadCharacter( character.url, character ).catch( ( e ) => console.warn( 'Vendor: character failed to load', e ) );
+
+	}
+
+	// a lazy character: start loading it when p (world xz) is near enough
+	loadWhenNear( p ) {
+
+		const c = this._pending;
+		if ( ! c || ! p ) return false;
+		if ( Math.hypot( p.x - this.position.x, p.z - this.position.z ) > ( c.range ?? 600 ) ) return false;
+		this._pending = null;
+		this.loadCharacter( c.url, c ).catch( ( e ) => console.warn( 'Vendor: character failed to load', e ) );
+		return true;
 
 	}
 

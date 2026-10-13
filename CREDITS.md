@@ -58,7 +58,10 @@ idle, talk, wave and shrug animations from the [Microsoft Rocketbox Avatar Libra
 (© Microsoft Corporation, MIT license, included as `LICENSE-Rocketbox.md`). The players' avatars
 (`player_m1`, `player_m2`, `player_f1`, `player_f2`, portraits in `public/ui/avatars/`) are
 `Male_Adult_01`, `Male_Adult_16`, `Female_Adult_17` and `Female_Adult_05` from the same library with its
-idle, umbrella-idle, cheer, wave and walk animations. All of them were converted with
+idle, umbrella-idle, cheer, wave and walk animations. The islanders who give out jobs
+(`npc_nalu`, `npc_tama`, `npc_mira`, `npc_oskar`, `npc_hilde`, `npc_bram`) are `Male_Adult_12`,
+`Delivery_Male_01`, `Female_Adult_12`, `Male_Adult_05`, `Female_Adult_09` and `Gardener_Male_01`
+with idle, talk and wave animations and 512² textures. All of them were converted with
 `tools/characters/` (textures resized, animations retargeted and baked). Paper: M. Gonzalez-Franco
 et al., "The Rocketbox Library and the Utility of Freely Available Rigged Avatars", Frontiers in
 Virtual Reality, 2020.

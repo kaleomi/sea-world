@@ -34,7 +34,18 @@ if ( process.argv.includes( '--veg' ) ) {
 }
 
 const C = ISLANDS.coral.position, E = ISLANDS.ember.position;
+const aerial = ( id, h = 360, back = 640 ) => {
+
+	const p = ISLANDS[ id ].position, l = Math.hypot( p.x, p.z );
+	// from the home island's side, looking out at it
+	return { pos: [ p.x - p.x / l * back, h, p.z - p.z / l * back ], target: [ p.x, 10, p.z ] };
+
+};
 const views = {
+	crescentAerial: aerial( 'crescent' ),
+	skerriesAerial: aerial( 'skerries' ),
+	mesaAerial: aerial( 'mesa', 260, 560 ),
+	longcayAerial: aerial( 'longcay', 300, 600 ),
 	coralAerial: { pos: [ C.x, 420, C.z + 620 ], target: [ C.x, 0, C.z ] },
 	coralMotu: { pos: [ C.x - 120, 6, C.z + 360 ], target: [ C.x - 200, 1, C.z + 230 ] },
 	emberAerial: { pos: [ E.x + 300, 380, E.z + 700 ], target: [ E.x, 40, E.z ] },

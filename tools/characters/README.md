@@ -7,7 +7,8 @@ The vendors (Joe at the fish stand, Marta at the chandlery) are avatars from the
 1024² textures and the clips below. The players' avatars on the shared sea
 (`player_m1`, `player_m2`, `player_f1`, `player_f2`: Male_Adult_01, Male_Adult_16, Female_Adult_17 and
 Female_Adult_05) are built the same way with their own clips, and their portraits on the start screen
-are `public/ui/avatars/<av>.jpg`.
+are `public/ui/avatars/<av>.jpg`. The six islanders who give out jobs (`npc_*.glb`, see CREDITS.md)
+have idle, talk and wave clips and 512² textures; the game loads each one when you sail near its island.
 
     tools/characters/build.sh [workdir]      # fetch -> textures -> Blender -> public/models/characters/
 

@@ -238,9 +238,9 @@ export class WorldMap {
 		ctx.strokeStyle = '#0b1418';
 		ctx.stroke();
 		ctx.restore();
-		// the labels, most important first: you, the people, the island names (north of each island)
+		// the labels, most important first: you, the island names (north of each island), the people
+		// (zoom in to see the ones that would overlap)
 		label( t( 'You' ), px, py + 20, 12, '#fff', 600, true );
-		for ( const [ text, x, y ] of dots.reverse() ) label( text, x, y, 12 );
 		for ( const d of Object.values( ISLANDS ) ) {
 
 			const ox = d.position ? d.position.x : 0, oz = d.position ? d.position.z : - 180;
@@ -248,6 +248,8 @@ export class WorldMap {
 			label( t( d.name ), X( ox ), Math.min( Y( oz ) - 24, Y( oz - north ) ), Math.round( Math.min( 22, Math.max( 14, 60 * s ) ) ), '#fff7e0', 700 );
 
 		}
+
+		for ( const [ text, x, y ] of dots.reverse() ) label( text, x, y, 12 );
 
 		// scale bar: a round distance about 120 px long
 		const want = 120 / s;

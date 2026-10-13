@@ -16,7 +16,8 @@ import { t } from '../i18n/index.js';
 //   tide      'high': only in the upper part of the tide (always met when the tide is turned off)
 //   bounty    $ for the first one; later ones pay REPEAT_BOUNTY of it
 //   stamina, power   how much longer and harder it fights than its weight alone (CatchMinigame):
-//             tuned so 30 lb braid lands most of them and the Silver King needs 60 lb
+//             tuned so 30 lb braid lands most of them and the Silver King needs 60 lb (the giants of
+//             small species fight far above their weight: power 3.5-4)
 //   rumour    what the locals say: the hint before you've caught it
 export const LEGENDS = {
 	ironjaw: { name: 'Old Ironjaw', species: 'grouper', kg: [ 22, 30 ], waters: [ 'reef', 'deep' ], time: null, rain: 0.4, tide: null, bounty: 900, stamina: 1.6, power: 1.15,
@@ -29,6 +30,14 @@ export const LEGENDS = {
 		rumour: 'A pale barracuda hunts the reef of Coral Atoll after dark. Nobody has kept a line on it.' },
 	thunderJack: { name: 'Thunder Jack', species: 'jack', kg: [ 16, 22 ], waters: [ 'shallows', 'pier', 'bay' ], time: null, rain: 0.8, tide: null, bounty: 600, stamina: 1.5, power: 1.15,
 		rumour: 'In a thunderstorm the jacks go wild, and the biggest of them all comes inshore.' },
+	silverNeedle: { name: 'The Silver Needle', species: 'needlefish', kg: [ 5, 7 ], waters: [ 'bay', 'shallows' ], time: 'night', rain: 0, tide: null, bounty: 650, stamina: 1.5, power: 4,
+		rumour: 'On calm nights a houndfish as long as an oar skips across the bay of Crescent Isle.' },
+	rainbowEmperor: { name: 'The Rainbow Emperor', species: 'parrot', kg: [ 7, 9.5 ], waters: [ 'reef' ], time: 'day', rain: 0, tide: 'high', bounty: 750, stamina: 1.5, power: 4,
+		rumour: 'At high water on a bright day, a parrotfish of every colour grazes the reefs of the Skerries.' },
+	ironFin: { name: 'Iron Fin', species: 'tuna', kg: [ 24, 32 ], waters: [ 'deep' ], time: 'dawnDusk', rain: 0, tide: null, bounty: 1100, stamina: 1.5, power: 1.1,
+		rumour: 'Under the cliffs of Eagle Rock, at first and last light, a blackfin tuna with a torn fin smashes the bait schools.' },
+	kingHog: { name: 'King Hog', species: 'wrasse', kg: [ 8, 11 ], waters: [ 'bay', 'reef' ], time: null, rain: 0, tide: 'high', bounty: 700, stamina: 1.5, power: 3.5,
+		rumour: 'When the tide floods the flats of Long Cay, a hogfish as big as a shield comes up onto the grass.' },
 };
 
 export const LEGEND_IDS = Object.keys( LEGENDS );

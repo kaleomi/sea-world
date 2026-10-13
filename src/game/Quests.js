@@ -1,4 +1,4 @@
-// The quest givers on the outer islands: one person on each, with a chain of jobs handed out one at a
+// The quest givers on the outer islands: one person on each (a Rocketbox character, `character`), with a chain of jobs handed out one at a
 // time. A job asks for fish from the cooler (a species, how many, how heavy at least) or for a legend
 // on the trophy wall (Legends.js), and pays a reward. Plain data and pure functions; GameState keeps the
 // progress ({ giver id: jobs done }), Game places the people (beachSpot) and GameHUD shows the panel.
@@ -9,6 +9,7 @@ export const GIVERS = {
 
 	nalu: {
 		id: 'nalu',
+		character: 'npc_nalu', // public/models/characters/<character>.glb
 		island: 'coral',
 		name: 'Nalu · Reef keeper',
 		greeting: 'The reef feeds the whole atoll. Help me keep an eye on it.',
@@ -25,6 +26,7 @@ export const GIVERS = {
 
 	tama: {
 		id: 'tama',
+		character: 'npc_tama', // public/models/characters/<character>.glb
 		island: 'ember',
 		name: 'Tama · Smokehouse',
 		greeting: 'Smoke and salt, that\'s Ember Island. I always need more fish for the racks.',
@@ -37,6 +39,78 @@ export const GIVERS = {
 			{ id: 'tuna', title: 'Tuna steaks', text: 'The tuna run past the island. Bring me two heavy ones.', needs: [ { species: 'tuna', count: 2, minKg: 6 } ], reward: 420 },
 			{ id: 'tarpon', title: 'Silver giant', text: 'A tarpon, a proper one. Off the west side where the water drops away.', needs: [ { species: 'tarpon', count: 1, minKg: 25 } ], reward: 520 },
 			{ id: 'bigRed', title: 'Big Red', text: 'The old fishers talk about a red snapper the size of a child. Prove it\'s real.', legend: 'bigRed', reward: 700 },
+		],
+	},
+
+	mira: {
+		id: 'mira',
+		character: 'npc_mira', // public/models/characters/<character>.glb
+		island: 'crescent',
+		name: 'Mira · Pearl diver',
+		greeting: 'I dive the bay for pearls, and trade for fish with anyone who brings a boat in.',
+		done: 'You know this bay as well as I do now. Come back for a swim some time.',
+		look: { shirt: 0x3a6f8f, trousers: 0x2a2f38, apron: 0xd8cfb8, hat: 0xe0d2a6, hair: 0x2a1c14, skin: 0x9a6a48 },
+		quests: [
+			{ id: 'supper', title: 'Supper from the bay', text: 'I have been under water all day. A couple of grunts and a yellowtail for the pot?', needs: [ { species: 'grunt', count: 2, minKg: 0.6 }, { species: 'yellowtail', count: 1, minKg: 0.7 } ], reward: 110 },
+			{ id: 'needles', title: 'Silver flashes', text: 'Houndfish skip over the sand at the mouth of the bay. Bring me two long ones.', needs: [ { species: 'needlefish', count: 2, minKg: 1.2 } ], reward: 170 },
+			{ id: 'jacks', title: 'Jacks at the mouth', text: 'The jacks chase my bait fish into the bay. Two big ones, please.', needs: [ { species: 'jack', count: 2, minKg: 4 } ], reward: 260 },
+			{ id: 'offshore', title: 'Behind the ridge', text: 'Out past the back of the island the water goes blue. A mahi and a tuna from out there.', needs: [ { species: 'mahi', count: 1, minKg: 8 }, { species: 'tuna', count: 1, minKg: 6 } ], reward: 380 },
+			{ id: 'tarpon', title: 'Rolling at sunset', text: 'Tarpon roll in the bay when the sun goes down. Land a big one.', needs: [ { species: 'tarpon', count: 1, minKg: 25 } ], reward: 500 },
+			{ id: 'needle', title: 'The Silver Needle', text: 'I have seen it from under the water: a houndfish as long as an oar. Only on calm nights.', legend: 'silverNeedle', reward: 650 },
+		],
+	},
+
+	oskar: {
+		id: 'oskar',
+		character: 'npc_oskar', // public/models/characters/<character>.glb
+		island: 'skerries',
+		name: 'Oskar · Old navigator',
+		greeting: 'Forty years I sailed these rocks. Now I chart the reefs, and I need someone with a rod.',
+		done: 'The chart is finished, thanks to you. Mind the rocks on your way out.',
+		look: { shirt: 0x6b5a3a, trousers: 0x3a3428, apron: 0x8a7a58, hat: 0x2c2a26, hair: 0xb8b2a8, skin: 0xc49a7a },
+		quests: [
+			{ id: 'fry', title: 'Small fry', text: 'Every reef on my chart has its little fish. Bring me some sergeant majors and blue chromis.', needs: [ { species: 'sergeant', count: 3, minKg: 0.15 }, { species: 'chromis', count: 2, minKg: 0.05 } ], reward: 100 },
+			{ id: 'tangs', title: 'Blue between the rocks', text: 'Blue tang school between the islets. Three good ones.', needs: [ { species: 'tang', count: 3, minKg: 0.3 } ], reward: 150 },
+			{ id: 'angels', title: 'Angels of the Skerries', text: 'Queen angelfish. The finest fish on any reef. Two of them.', needs: [ { species: 'angel', count: 2, minKg: 0.8 } ], reward: 230 },
+			{ id: 'caves', title: 'Caves under the islets', text: 'Groupers live in the caves under the rocks. Pull two big ones out.', needs: [ { species: 'grouper', count: 2, minKg: 6 } ], reward: 340 },
+			{ id: 'drop', title: 'Red over the drop', text: 'Where the bank falls away to the deep, the red snapper gather. Two good ones.', needs: [ { species: 'redSnapper', count: 2, minKg: 4 } ], reward: 420 },
+			{ id: 'emperor', title: 'The Rainbow Emperor', text: 'Once, at high water on a bright day, I saw a parrotfish of every colour. Nobody believes me.', legend: 'rainbowEmperor', reward: 750 },
+		],
+	},
+
+	hilde: {
+		id: 'hilde',
+		character: 'npc_hilde', // public/models/characters/<character>.glb
+		island: 'mesa',
+		name: 'Hilde · Lighthouse keeper',
+		greeting: 'I keep the light up on Eagle Rock. It\'s a long climb, and a lonely one. Fish helps.',
+		done: 'The lamp room has never been so well fed. Fair winds, fisher.',
+		look: { shirt: 0x5a5f6a, trousers: 0x2a2c30, apron: 0x9a8f80, hat: 0x2f3a4a, hair: 0x8a7a6a, skin: 0xd0a888 },
+		quests: [
+			{ id: 'supper', title: 'The keeper\'s supper', text: 'Two yellowtail snappers for my supper, and I\'ll tell you the stories of this rock.', needs: [ { species: 'yellowtail', count: 2, minKg: 0.8 } ], reward: 120 },
+			{ id: 'cliff', title: 'Under the cliff', text: 'Under the cliffs it\'s rocks and deep shadow. A grouper and a hogfish from there.', needs: [ { species: 'grouper', count: 1, minKg: 5 }, { species: 'wrasse', count: 1, minKg: 1.5 } ], reward: 220 },
+			{ id: 'teeth', title: 'Teeth in the blue', text: 'The barracuda hang off the sea stacks. Two big ones.', needs: [ { species: 'barracuda', count: 2, minKg: 7 } ], reward: 330 },
+			{ id: 'gannets', title: 'What the gannets chase', text: 'From the lamp I watch the birds dive on the mahi. Bring me two.', needs: [ { species: 'mahi', count: 2, minKg: 8 } ], reward: 430 },
+			{ id: 'tuna', title: 'Tuna for the lamp room', text: 'Two heavy blackfin tuna. They\'ll keep me through the winter.', needs: [ { species: 'tuna', count: 2, minKg: 8 } ], reward: 520 },
+			{ id: 'ironFin', title: 'Iron Fin', text: 'Every dawn I see it smash the bait under the cliffs: a tuna with a torn fin. Land it.', legend: 'ironFin', reward: 900 },
+		],
+	},
+
+	bram: {
+		id: 'bram',
+		character: 'npc_bram', // public/models/characters/<character>.glb
+		island: 'longcay',
+		name: 'Bram · Flats guide',
+		greeting: 'Welcome to Long Cay. I guide on the flats. Wade in slow, and watch the grass move.',
+		done: 'You fish the flats like a local now. Nothing more I can teach you.',
+		look: { shirt: 0x6a7a3a, trousers: 0x3a3a2c, apron: 0x7a6a4a, hat: 0xc8b88a, hair: 0x1a1410, skin: 0xd8b090 },
+		quests: [
+			{ id: 'bait', title: 'Bait from the shallows', text: 'Before we fish, we need bait. Four silversides from the shallows.', needs: [ { species: 'silverside', count: 4, minKg: 0.03 } ], reward: 90 },
+			{ id: 'mullet', title: 'Mullet on the flats', text: 'Mullet mud the water on the flats. Three good ones.', needs: [ { species: 'mullet', count: 3, minKg: 1 } ], reward: 140 },
+			{ id: 'skippers', title: 'Skippers', text: 'Houndfish skip across the shallows when they hunt. Two of them.', needs: [ { species: 'needlefish', count: 2, minKg: 1 } ], reward: 200 },
+			{ id: 'hogs', title: 'Hogs in the grass', text: 'Hogfish root in the seagrass on the lee side. Two big ones.', needs: [ { species: 'wrasse', count: 2, minKg: 2 } ], reward: 300 },
+			{ id: 'tarpon', title: 'Silver on the flats', text: 'Sometimes a tarpon comes right up onto the flats. Hook one.', needs: [ { species: 'tarpon', count: 1, minKg: 20 } ], reward: 480 },
+			{ id: 'king', title: 'King Hog', text: 'When the tide floods the flats, the King comes up onto the grass. A hogfish as big as a shield.', legend: 'kingHog', reward: 700 },
 		],
 	},
 

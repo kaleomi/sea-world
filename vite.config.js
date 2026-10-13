@@ -6,6 +6,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 // (src/world/TerrainCache.js), so a build that changes the terrain never reads an old one
 const TERRAIN_SOURCES = [
 	'src/world/TerrainData.js', 'src/world/TerrainCache.js', 'src/world/WorldLayout.js', 'src/util/Noise.js',
+	'src/world/terrain/OuterIsland.js',
 	'src/world/terrain/TerrainNoise.js', 'src/world/terrain/IslandShape.js',
 	...readdirSync( 'src/world/islands' ).map( ( f ) => `src/world/islands/${ f }` ),
 	...readdirSync( 'src/engine/math' ).map( ( f ) => `src/engine/math/${ f }` ),

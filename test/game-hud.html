@@ -79,12 +79,41 @@ if ( view === 'map' ) {
 		return { canvas: c, x0, z0, n: 256, ppm: 256 / ext };
 
 	};
-	const minimap = { _layers: [ layer( - 640, - 820, 1280, 70, '#80a058' ), layer( 1888, 1088, 1024, 60, '#e8d8ac' ), layer( - 3112, 388, 1024, 50, '#5a6a50' ) ] };
+	// the real outer islands (generated in workers), drawn with a simple height palette
+	const { buildOuterIslands } = await import( '../src/world/terrain/OuterIslands.js' );
+	const { OUTER_ISLANDS } = await import( '../src/world/islands/index.js' );
+	const { beachSpot } = await import( '../src/game/Quests.js' );
+	const outer = await buildOuterIslands( OUTER_ISLANDS, { cache: false } );
+	const real = ( o ) => {
+
+		const c = document.createElement( 'canvas' );
+		c.width = c.height = 256;
+		const g = c.getContext( '2d' ), img = g.createImageData( 256, 256 );
+		for ( let j = 0; j < 256; j ++ ) for ( let i = 0; i < 256; i ++ ) {
+
+			const h = o.heightAt( o.x0 + ( i + 0.5 ) * 4, o.z0 + ( j + 0.5 ) * 4 ), k = ( j * 256 + i ) * 4;
+			const t = Math.min( 1, - h / 40 );
+			const col = h < 0 ? [ 62 - 50 * t, 186 - 142 * t, 190 - 112 * t ] : h < 2 ? [ 226, 212, 160 ] : [ 90 + h, 140 - h * 0.3, 70 + h * 0.4 ];
+			const edge = Math.min( i, j, 255 - i, 255 - j ) / 25.6;
+			img.data.set( [ ...col, 255 * Math.min( 1, edge ) ], k );
+
+		}
+
+		g.putImageData( img, 0, 0 );
+		return { canvas: c, x0: o.x0, z0: o.z0, n: 256, ppm: 256 / o.size };
+
+	};
+	const minimap = { _layers: [ layer( - 640, - 820, 1280, 70, '#80a058' ), ...outer.map( real ) ] };
 	const e = new Array( 16 ).fill( 0 );
 	e[ 8 ] = 0.6; e[ 10 ] = 0.8; // looking north-west-ish
 	game.app = { camera: { matrixWorld: { elements: e }, position: { x: 1900, z: 1300 } }, player: { mode: 'boat' }, boatCtl: { position: { x: 1900, z: 1300 } },
 		net: { remote: { positions: () => [ { x: 300, z: 200, color: '#9b6ad6', name: 'Marisol' } ] } } };
-	game.givers = [ { giver: 'nalu', name: GIVERS.nalu.name, position: { x: 2142, z: 1428 } }, { giver: 'tama', name: GIVERS.tama.name, position: { x: - 2295, z: 794 } } ];
+	game.givers = Object.values( GIVERS ).map( ( g ) => {
+
+		const o = outer.find( ( q ) => q.id === g.island ), s = beachSpot( o, 0, 0 );
+		return { giver: g.id, name: g.name, position: { x: s.x, z: s.z } };
+
+	} );
 	game.questState = ( id ) => ( id === 'nalu' ? 'ready' : 'open' );
 	const map = new WorldMap( root, game, minimap );
 	map.toggle( true );

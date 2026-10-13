@@ -8,6 +8,7 @@ import { LEGENDS, LEGEND_IDS, rollLegend } from '../src/game/Legends.js';
 import { habitatAt, pickSpecies } from '../src/game/Bites.js';
 import { Game } from '../src/game/Game.js';
 import { scatterIsland } from '../src/world/vegetation/IslandScatter.js';
+import { beachSpot } from '../src/game/Quests.js';
 
 let fails = 0;
 const ok = ( c, msg ) => {
@@ -122,12 +123,123 @@ for ( const o of Object.values( isl ) ) {
 
 }
 
+// ---- the four newer recipes: crescent, cluster, mesa, bar
+const ring = ( o, r, fn ) => {
+
+	let n = 0;
+	for ( let a = - Math.PI; a < Math.PI; a += Math.PI / 90 ) if ( fn( o.cx + Math.cos( a ) * r, o.cz + Math.sin( a ) * r, a ) ) n ++;
+	return n;
+
+};
+const wrap = ( a ) => Math.atan2( Math.sin( a ), Math.cos( a ) );
+{
+
+	const o = isl.crescent, T = o.def.terrain;
+	const mouth = o.heightAt( o.cx + Math.cos( T.opening ) * T.radius, o.cz + Math.sin( T.opening ) * T.radius );
+	const back = o.heightAt( o.cx - Math.cos( T.opening ) * T.radius, o.cz - Math.sin( T.opening ) * T.radius );
+	ok( mouth < - 3 && back > T.peak * 0.6, `crescent: open water at the mouth (${ mouth.toFixed( 1 ) } m), a ridge at the back (${ back.toFixed( 0 ) } m)` );
+	const bay = o.heightAt( o.cx, o.cz );
+	ok( bay < - 3 && bay > - 12, `crescent: a sheltered bay of sailing depth inside (${ bay.toFixed( 1 ) } m)` );
+	ok( ring( o, T.radius, ( x, z, a ) => o.heightAt( x, z ) > 0 ) > 100 && ring( o, T.radius, ( x, z, a ) => Math.abs( wrap( a - T.opening ) ) < 0.4 && o.heightAt( x, z ) > 0 ) === 0, 'crescent: land round most of the ring, none in the mouth' );
+
+}
+
+{
+
+	const o = isl.skerries;
+	ok( o.islets.length >= 5, `cluster: ${ o.islets.length } islets` );
+	ok( o.islets.every( ( I ) => o.heightAt( o.cx + I.x, o.cz + I.z ) > 2 ), 'cluster: every islet is dry land in the middle' );
+	let wet = 0;
+	for ( let i = 0; i < o.islets.length; i ++ ) for ( let j = i + 1; j < o.islets.length; j ++ ) {
+
+		const A = o.islets[ i ], B = o.islets[ j ];
+		if ( o.heightAt( o.cx + ( A.x + B.x ) / 2, o.cz + ( A.z + B.z ) / 2 ) < - 1 ) wet ++;
+
+	}
+
+	ok( wet > o.islets.length, `cluster: channels of water between the islets (${ wet } pairs)` );
+	let reef = 0;
+	for ( let i = 0; i < 4000; i ++ ) {
+
+		const x = o.cx + ( ( i % 64 ) / 64 - 0.5 ) * 700, z = o.cz + ( Math.floor( i / 64 ) / 64 - 0.5 ) * 700;
+		if ( o.reefDist( x, z ) < 0 && o.heightAt( x, z ) < 0 ) reef ++;
+
+	}
+
+	ok( reef > 60, `cluster: reef patches round the islets (${ reef } of 4000 samples)` );
+
+}
+
+{
+
+	const o = isl.mesa, T = o.def.terrain;
+	ok( o.heightAt( o.cx, o.cz ) > T.height * 0.8, `mesa: a high plateau (${ o.heightAt( o.cx, o.cz ).toFixed( 0 ) } m)` );
+	// the cliff: from the top to the sea in a few tens of metres, away from the cove
+	let cliffs = 0;
+	for ( let a = - Math.PI; a < Math.PI; a += 0.2 ) {
+
+		if ( Math.abs( wrap( a - T.cove ) ) < 1 ) continue;
+		let topR = 0, seaR = 0;
+		for ( let r = 0; r < T.radius * 1.6; r += 2 ) {
+
+			const h = o.heightAt( o.cx + Math.cos( a ) * r, o.cz + Math.sin( a ) * r );
+			if ( h > T.height * 0.7 ) topR = r;
+			if ( h < 0 && ! seaR ) seaR = r;
+
+		}
+
+		if ( seaR - topR < 60 ) cliffs ++;
+
+	}
+
+	ok( cliffs > 12, `mesa: sea cliffs round it (${ cliffs } bearings drop to the sea within 60 m)` );
+	ok( o.stacks.length >= 3 && o.stacks.every( ( S ) => o.heightAt( o.cx + S.x, o.cz + S.z ) > 12 ), `mesa: ${ o.stacks.length } sea stacks standing out of the water` );
+	const s = beachSpot( o, 0, 0 );
+	ok( s && Math.abs( wrap( Math.atan2( s.z - o.cz, s.x - o.cx ) - T.cove ) ) < 0.6, 'mesa: the landing beach is in the cove' );
+
+}
+
+{
+
+	const o = isl.longcay, T = o.def.terrain;
+	let land = 0, xs = [];
+	for ( let u = - T.length / 2; u <= T.length / 2; u += 10 ) {
+
+		const x = o.cx + Math.cos( T.axis ) * u, z = o.cz + Math.sin( T.axis ) * u;
+		let top = - Infinity;
+		for ( let v = - 120; v <= 120; v += 2 ) top = Math.max( top, o.heightAt( x - Math.sin( T.axis ) * v, z + Math.cos( T.axis ) * v ) );
+		if ( top > 0.5 ) land ++;
+		xs.push( top );
+
+	}
+
+	ok( land > xs.length * 0.75 && Math.max( ...xs ) < T.dune + 4, `bar: a long low cay (${ land } of ${ xs.length } sections dry, highest ${ Math.max( ...xs ).toFixed( 1 ) } m)` );
+	const side = ( sign ) => {
+
+		let s = 0, n = 0;
+		for ( let u = - 200; u <= 200; u += 20 ) for ( let v = 100; v <= 180; v += 20 ) {
+
+			const vv = v * sign;
+			s += o.heightAt( o.cx + Math.cos( T.axis ) * u - Math.sin( T.axis ) * vv, o.cz + Math.sin( T.axis ) * u + Math.cos( T.axis ) * vv );
+			n ++;
+
+		}
+
+		return s / n;
+
+	};
+	const lee = side( T.lee ), wind = side( - T.lee );
+	ok( lee > - 3 && lee < - 0.3 && wind < lee - 4, `bar: wide shallow flats on the lee (${ lee.toFixed( 1 ) } m), deeper water to windward (${ wind.toFixed( 1 ) } m)` );
+
+}
+
 // ---- vegetation (world/vegetation/IslandScatter.js)
 for ( const o of Object.values( isl ) ) {
 
 	const v = scatterIsland( o );
 	const all = Object.values( v ).flat();
-	ok( v.palms.length > 100, `${ o.id }: palm groves (${ v.palms.length } palms)` );
+	// (the mesa is cliffs all round: palms only in its cove and on the odd beach under the cliffs)
+	ok( v.palms.length > ( o.def.terrain.kind === 'mesa' ? 20 : 100 ), `${ o.id }: palm groves (${ v.palms.length } palms)` );
 	ok( all.every( ( r ) => o.heightAt( r.x, r.z ) > 1.5 && Math.abs( r.y - o.heightAt( r.x, r.z ) ) < 1.5 ), `${ o.id }: every plant (${ all.length }) stands on dry land, on the ground` );
 	const seaward = v.palms.filter( ( r ) => {
 
@@ -147,6 +259,7 @@ for ( const o of Object.values( isl ) ) {
 	ok( v.trees.length > 1000 && v.ferns.length > 1000, `volcano: a forest (${ v.trees.length } trees, ${ v.ferns.length } ferns under them)` );
 	ok( v.trees.every( ( r ) => r.y < isl.ember.def.terrain.peak * 0.75 ), 'volcano: the top stays bare' );
 	ok( scatterIsland( isl.coral ).trees.length === 0, 'atoll: palms and scrub only, no forest on the islets' );
+	ok( scatterIsland( isl.mesa ).trees.filter( ( r ) => r.y > isl.mesa.def.terrain.height * 0.8 ).length > 500, 'mesa: a forest on the plateau top (its treeline is above it)' );
 
 }
 

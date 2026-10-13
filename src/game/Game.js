@@ -83,6 +83,8 @@ export class Game {
 			const v = new Vendor( {
 				name: g.name, kind: 'quest', position: new Vector3( s.x, T.heightAt( s.x, s.z ), s.z ), yaw: s.yaw, radius: 3.0,
 				greeting: g.greeting, material: this.stand.material, look: g.look,
+				// a Rocketbox character (tools/characters/), loaded when you come near the island
+				character: g.character ? { url: `${ ( import.meta.env && import.meta.env.BASE_URL ) || '/' }models/characters/${ g.character }.glb`, lazy: true, range: 650, idle: 'idle_neutral_01', talk: 'gestic_talk_neutral_01', greet: 'wave_01' } : null,
 			} );
 			v.giver = g.id;
 			if ( this.app.scene ) this.app.scene.add( v.group );
@@ -389,6 +391,7 @@ export class Game {
 
 		// the traders
 		for ( const v of this.vendors ) v.update( dt, p.mode === 'walk' ? p.position : null );
+		for ( const v of this.givers || [] ) v.loadWhenNear( p.position );
 		this.updateVendors( inp, p );
 
 		// prompts when the player has nothing to say

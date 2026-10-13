@@ -1,6 +1,10 @@
 import home from './home.js';
 import coral from './coral.js';
 import ember from './ember.js';
+import crescent from './crescent.js';
+import skerries from './skerries.js';
+import mesa from './mesa.js';
+import longcay from './longcay.js';
 
 // Every island in the archipelago, by id. An island is plain data: where it lies in the shared sea,
 // how its terrain is made, and which fish and legends live there. The home island (home.js) is the
@@ -9,9 +13,9 @@ import ember from './ember.js';
 //
 //   id, name, seed      key, display name, noise seed
 //   position { x, z }   centre in the world (m); size, res: heightmap domain (m) and texels per side
-//   terrain             { kind: 'atoll' | 'volcanic', ... } (see OuterIsland)
+//   terrain             { kind: 'atoll' | 'volcanic' | 'crescent' | 'cluster' | 'mesa' | 'bar', ... } (see OuterIsland)
 //   species, legends    ids from game/FishTable.js and game/Legends.js (null: all of them)
-export const ISLANDS = { [ home.id ]: home, [ coral.id ]: coral, [ ember.id ]: ember };
+export const ISLANDS = Object.fromEntries( [ home, coral, ember, crescent, skerries, mesa, longcay ].map( ( d ) => [ d.id, d ] ) );
 
 export const HOME_ISLAND = home.id;
 

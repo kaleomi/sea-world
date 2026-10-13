@@ -25,7 +25,7 @@ import { Terrain } from './world/Terrain.js';
 import { computeShoreField } from './world/ShoreField.js';
 import { WORLD } from './world/WorldLayout.js';
 import { OUTER_ISLANDS } from './world/islands/index.js';
-import { OuterIsland } from './world/terrain/OuterIsland.js';
+import { buildOuterIslands } from './world/terrain/OuterIslands.js';
 import { Colliders } from './world/Colliders.js';
 import { Village } from './world/Village.js';
 import { Reef } from './world/Reef.js';
@@ -160,11 +160,13 @@ export class App {
 		await progress( 0.06, t( 'Shaping the island…' ) );
 		// a production build keeps the generated grids in IndexedDB: later visits skip generation
 		// (world/TerrainCache.js; ?noCache regenerates). The snapshot is taken before the village edits them.
+		// the other islands of the archipelago, out in the same sea (world/islands/; ?noIslands: none):
+		// cached or generated in workers while the home island generates here
+		const outerIslands = qs.has( 'noIslands' ) ? Promise.resolve( [] ) : buildOuterIslands( OUTER_ISLANDS, { cache: ! qs.has( 'noCache' ) } );
 		const terrainSeed = WORLD.island.seed, terrainKey = qs.has( 'noCache' ) ? null : terrainCacheKey( terrainSeed );
 		this.terrainData = new TerrainData( terrainSeed, await loadTerrain( terrainKey ) );
 		if ( terrainKey && ! this.terrainData.fromCache ) saveTerrain( terrainKey, terrainSnapshot( this.terrainData ) );
-		// the other islands of the archipelago, out in the same sea (world/islands/; ?noIslands: none)
-		this.outerIslands = qs.has( 'noIslands' ) ? [] : OUTER_ISLANDS.map( ( d ) => new OuterIsland( d ) );
+		this.outerIslands = await outerIslands;
 		this.terrainData.outer = this.outerIslands;
 		this.colliders = new Colliders();
 		// the village flattens building pads into the heightmap: build it before any terrain
