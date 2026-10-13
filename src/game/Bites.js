@@ -4,10 +4,11 @@ import { FISH, FISH_IDS } from './FishTable.js';
 //   depth     water depth under the bobber (m)
 //   reefDist  horizontal distance to the reef edge (m, < 0 inside it)
 //   pierDist  horizontal distance to the pier (piles / head) (m)
-// Returns weights per water type (they overlap: a spot can be both pier and bay).
+// Returns weights per water type (they overlap: a spot can be both pier and bay). The open-ocean
+// keys (offshore, abyss, trench) stay 0 here; Zones.zoneHabitat fills them in from the position.
 export function habitatAt( { depth, reefDist, pierDist } ) {
 
-	const h = { shallows: 0, reef: 0, pier: 0, bay: 0, deep: 0 };
+	const h = { shallows: 0, reef: 0, pier: 0, bay: 0, deep: 0, offshore: 0, abyss: 0, trench: 0 };
 	if ( depth < 0.25 ) return h; // on the sand
 	h.shallows = smooth( 3.5, 1.0, depth );
 	h.reef = smooth( 12, - 6, reefDist ) * smooth( 0.8, 2.5, depth );

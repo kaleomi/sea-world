@@ -1,6 +1,7 @@
 import { WORLD } from '../world/WorldLayout.js';
 import { STAND } from './FishStand.js';
 import { CHANDLERY } from './Chandlery.js';
+import { ZONE_BY_ID } from './Zones.js';
 import { t } from '../i18n/index.js';
 
 // Minimap, lower right: the island baked once from the terrain data into a 2D canvas (depth-tinted
@@ -69,8 +70,10 @@ const CSS = /* css */`
 	border-radius: 50%; border: 1.5px solid rgba(var(--tw-aqua-rgb), 0.9); animation: gm-map-ring 2.2s var(--tw-ease-io) infinite; }
 .gm-map-fish > i + i { animation-delay: -1.1s; }
 @keyframes gm-map-ring { 0% { transform: scale(0.45); } 100% { transform: scale(1.15); border-color: rgba(var(--tw-aqua-rgb), 0); } }
-.gm-map-label { position: absolute; left: 50%; bottom: calc(-2 * var(--tw-u)); transform: translate(-50%, 100%); padding-top: calc(4 * var(--tw-u));
-	font: 500 var(--tw-fs-xs) var(--tw-mono); color: var(--tw-ink-3); white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,0.7); display: none; }
+.gm-map-label { position: absolute; left: 50%; top: calc(-2 * var(--tw-u)); transform: translate(-50%, -100%); padding-bottom: calc(4 * var(--tw-u));
+	font: 600 var(--tw-fs-xs) var(--tw-font); color: #fff; white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,0.8); display: none; }
+.gm-map-label.is-on { display: block; }
+.gm-map-label i { display: inline-block; width: 0.7em; height: 0.7em; border-radius: 50%; margin-right: 0.4em; vertical-align: 0.05em; box-shadow: 0 0 0 1px rgba(255,255,255,0.7); }
 /* short windows: the settings rail (right, vertically centred) reaches down to the corner */
 @media (max-height: 860px) { .gm-map { right: calc(var(--tw-edge) + 58 * var(--tw-u)); } }
 @media (max-width: 640px) { .gm-map { width: calc(128 * var(--tw-u)); height: calc(128 * var(--tw-u)); } }
@@ -122,11 +125,15 @@ export class Minimap {
 
 		this.el = h( 'div', 'gm-map tw-glass', `<div class="gm-map-view"><canvas width="${ N }" height="${ N }" style="width: ${ N }px; height: ${ N }px"></canvas><div class="gm-map-vig"></div>
 			<div class="gm-map-marks"></div>
-			<div class="gm-map-me"><svg viewBox="0 0 24 24"><path d="M12 2 20 21 12 16.5 4 21Z" fill="#fff" stroke="#0b1418" stroke-width="1.4" stroke-linejoin="round"/></svg></div></div>` );
+			<div class="gm-map-me"><svg viewBox="0 0 24 24"><path d="M12 2 20 21 12 16.5 4 21Z" fill="#fff" stroke="#0b1418" stroke-width="1.4" stroke-linejoin="round"/></svg></div></div>
+			<div class="gm-map-label"></div>` );
 		this.el.setAttribute( 'aria-hidden', 'true' );
 		this.view = this.el.querySelector( '.gm-map-view' );
 		this.canvas = this.el.querySelector( 'canvas' );
 		this.marks = this.el.querySelector( '.gm-map-marks' );
+		// at sea: the ocean zone you're in (Zones.js, from Game.zone) over the map, its colour behind it
+		this.zoneEl = this.el.querySelector( '.gm-map-label' );
+		this._zone = null;
 		parent.append( this.el );
 
 		const mk = ( kind, icon ) => {
@@ -303,10 +310,11 @@ export class Minimap {
 
 			}
 
-			// the edges fade out, so the square of each bake melts into the open sea behind it (no seams)
+			// the edges fade out, so the square of each bake melts into the open sea behind it (no seams);
+			// so does water off the shelf, where the ocean zone's colour behind shows (Zones.js)
 			const edge = Math.min( px, py, N - 1 - px, N - 1 - py );
 			const o = ( py * N + px ) * 4;
-			d[ o ] = c[ 0 ]; d[ o + 1 ] = c[ 1 ]; d[ o + 2 ] = c[ 2 ]; d[ o + 3 ] = 255 * smooth( 0, FADE, edge );
+			d[ o ] = c[ 0 ]; d[ o + 1 ] = c[ 1 ]; d[ o + 2 ] = c[ 2 ]; d[ o + 3 ] = 255 * smooth( 0, FADE, edge ) * ( 1 - smooth( 40, 88, - hgt ) );
 
 		}
 
@@ -394,7 +402,19 @@ export class Minimap {
 		const x = cam.position.x, z = cam.position.z;
 
 		// zoom: close on foot, wider at sea
-		const want = p.mode === 'boat' || p.mode === 'deck' || p.mode === 'swim' ? 240 : 110;
+		const sea = p.mode === 'boat' || p.mode === 'deck' || p.mode === 'swim';
+		const zone = sea && this.game.zone ? this.game.zone : null;
+		if ( zone !== this._zone ) {
+
+			this._zone = zone;
+			const Z = zone && ZONE_BY_ID[ zone ];
+			this._toggle( this.zoneEl, 'is-on', !! Z );
+			if ( Z ) this.zoneEl.innerHTML = `<i style="background:${ Z.color }"></i>${ t( Z.name ) }`;
+			this.view.style.background = Z && zone !== 'shallows' ? Z.color : '';
+
+		}
+
+		const want = sea ? 240 : 110;
 		this.radiusM += ( want - this.radiusM ) * ( 1 - Math.exp( - dt * 1.5 ) );
 		const kpm = R / this.radiusM; // css px per metre
 

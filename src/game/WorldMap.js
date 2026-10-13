@@ -1,10 +1,11 @@
 import { STAND } from './FishStand.js';
 import { CHANDLERY } from './Chandlery.js';
 import { ISLANDS } from '../world/islands/index.js';
+import { paintZones, ZONE_LABELS, ZONE_BY_ID, TRENCH } from './Zones.js';
 import { t } from '../i18n/index.js';
 
 // The full map (M): every island, north up, drawn from the minimap's baked canvases into one canvas
-// over the screen. Markers: you (an arrow the way the view faces), your boat, Joe and Marta, the quest
+// over the screen, on the ocean zones (Zones.js). Markers: you (an arrow the way the view faces), your boat, Joe and Marta, the quest
 // givers on the outer islands (bright when a job can be handed in), the other players on the shared sea,
 // the island names and a scale bar. Scroll zooms round the cursor, dragging moves it; M or Esc closes.
 // Only draws while open.
@@ -22,7 +23,6 @@ const CSS = /* css */`
 .gm-world-view canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 `;
 
-const SEA = '#0c2c4e';
 const MARK = { joe: '#f3c24f', marta: '#5fd3cf', quest: '#f0a35a', ready: '#ffd35a', done: '#b9b2a4', boat: '#f2efe6' };
 
 const h = ( tag, cls, html ) => {
@@ -109,6 +109,17 @@ export class WorldMap {
 
 		}
 
+		// ... and the trench, the far end of the sea (Zones.js)
+		for ( const a of [ - 1, - 0.5, 0, 0.5, 1 ] ) for ( const r of [ TRENCH.r0, TRENCH.r1 ] ) {
+
+			const ang = TRENCH.angle + a * TRENCH.half;
+			x0 = Math.min( x0, Math.cos( ang ) * r );
+			x1 = Math.max( x1, Math.cos( ang ) * r );
+			z0 = Math.min( z0, Math.sin( ang ) * r );
+			z1 = Math.max( z1, Math.sin( ang ) * r );
+
+		}
+
 		const m = 150;
 		return { x0: x0 - m, z0: z0 - m, x1: x1 + m, z1: z1 + m };
 
@@ -156,8 +167,8 @@ export class WorldMap {
 		const ctx = this.ctx, s = this.scale;
 		const X = ( x ) => W / 2 + ( x - this.cx ) * s, Y = ( z ) => H / 2 + ( z - this.cz ) * s;
 		ctx.setTransform( dpr, 0, 0, dpr, 0, 0 );
-		ctx.fillStyle = SEA;
-		ctx.fillRect( 0, 0, W, H );
+		// the ocean zones (coastal, offshore, deep sea, the trench) under the islands
+		paintZones( ctx, X, Y, s, W, H );
 		ctx.imageSmoothingEnabled = true;
 		for ( const L of this.minimap._layers ) {
 
@@ -249,6 +260,7 @@ export class WorldMap {
 
 		}
 
+		for ( const z of ZONE_LABELS ) label( t( ZONE_BY_ID[ z.id ].name ), X( z.x ), Y( z.z ), 13, z.id === 'trench' ? '#c9b8ff' : '#b8d4f0', 600 );
 		for ( const [ text, x, y ] of dots.reverse() ) label( text, x, y, 12 );
 
 		// scale bar: a round distance about 120 px long

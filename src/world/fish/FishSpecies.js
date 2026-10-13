@@ -25,6 +25,9 @@ export const PATTERN = {
 	silverside: 0, chromis: 1, grunt: 2, yellowtail: 3, tang: 4, sergeant: 5, wrasse: 6, parrot: 7,
 	angel: 8, barracuda: 9, redSnapper: 10, grouper: 11, tuna: 12, mahi: 13, mullet: 14, needlefish: 15,
 	jack: 16, tarpon: 17, stingray: 18, eagleRay: 19, turtle: 20,
+	// the open-ocean fish (game/Zones.js): offshore, deep sea, trench
+	skipjack: 21, amberjack: 22, wahoo: 23, yellowfin: 24, bluefin: 25, opah: 26, sablefish: 27, roughy: 28,
+	coelacanth: 29, oarfish: 30, angler: 31, snailfish: 32,
 };
 
 const spiny = ( from, to, rays, h, rake, notch = 0.16 ) => ( { from, to, rays, spiny: true, h, rake, notch } );
@@ -371,3 +374,160 @@ export const SKIN = {
 	eagleRay: { back: 0x14181e, flank: 0x1c2028, belly: 0xe0e2e2, fin: 0x101418, edge: 0x2a2e36, rough: 0.35 },
 	turtle: { back: 0x3e3220, flank: 0x86683a, belly: 0xc8b884, fin: 0x4a4238, edge: 0x9a9280, rough: 0.45 },
 };
+
+// ---- open-ocean fish (game/Zones.js), most of them variations on the anatomies above
+const clone = ( o ) => JSON.parse( JSON.stringify( o ) );
+const scaled = ( curve, k ) => curve.map( ( [ u, v ] ) => [ u, v * ( typeof k === 'function' ? k( u ) : k ) ] );
+const variant = ( base, pattern, patch ) => ( { ...clone( SPECIES[ base ] ), pattern, ...patch } );
+
+Object.assign( SPECIES, {
+
+	// offshore: skipjack (a stout little tuna), greater amberjack, wahoo, yellowfin tuna
+	skipjack: variant( 'tuna', PATTERN.skipjack, {
+		top: scaled( SPECIES.tuna.top, 1.08 ), bot: scaled( SPECIES.tuna.bot, 1.12 ), wid: scaled( SPECIES.tuna.wid, 1.08 ),
+		iris: 0xb0a060,
+	} ),
+	amberjack: variant( 'jack', PATTERN.amberjack, {
+		top: scaled( SPECIES.jack.top, 0.88 ), bot: scaled( SPECIES.jack.bot, 0.86 ), lateral: 0.4, arch: 0.12,
+		dorsal: [ spiny( 0.34, 0.44, 7, [ [ 0, 0.03 ], [ 0.4, 0.04 ], [ 1, 0.015 ] ], [ 0.4, 0.7 ], 0.15 ), soft( 0.45, 0.84, 31, [ [ 0, 0.07 ], [ 0.12, 0.06 ], [ 1, 0.02 ] ], [ 0.55, 1.05 ] ) ],
+		pectoral: { u: 0.29, y: 0.0, len: 0.13, base: 0.022, rays: 19, shape: 'pointed', spread: 0.35 },
+		caudal: { shape: 'forked', len: 0.21, span: 0.18, fork: 0.3, rays: 17 },
+		iris: 0xb8a070, irid: 0.4, metal: 0.4,
+	} ),
+	wahoo: variant( 'barracuda', PATTERN.wahoo, {
+		mouth: { corner: 0.1, y: - 0.004, tip: - 0.002, protrude: 0.006 },
+		eye: { u: 0.1, y: 0.016, r: 0.014 },
+		scales: 0.0, scaleVis: 0.0, lateral: 0.25, arch: 0.3,
+		dorsal: [ spiny( 0.28, 0.6, 24, [ [ 0, 0.045 ], [ 0.15, 0.05 ], [ 1, 0.018 ] ], [ 0.45, 0.7 ], 0.12 ), soft( 0.68, 0.76, 12, [ [ 0, 0.04 ], [ 1, 0.02 ] ], [ 0.55, 0.9 ] ) ],
+		anal: [ soft( 0.7, 0.78, 12, [ [ 0, 0.04 ], [ 1, 0.02 ] ], [ 0.55, 0.9 ] ) ],
+		finlets: { from: 0.8, to: 0.96, dorsal: 8, ventral: 8 },
+		caudal: { shape: 'lunate', len: 0.12, span: 0.16, fork: 0.3, rays: 17 },
+		iris: 0x9098a0, irid: 0.7, metal: 0.5,
+	} ),
+	yellowfin: variant( 'tuna', PATTERN.yellowfin, {
+		dorsal: [ clone( SPECIES.tuna.dorsal[ 0 ] ), soft( 0.52, 0.6, 12, [ [ 0, 0.19 ], [ 0.35, 0.11 ], [ 1, 0.02 ] ], [ 0.75, 1.25 ] ) ],
+		anal: [ soft( 0.56, 0.63, 12, [ [ 0, 0.17 ], [ 0.35, 0.1 ], [ 1, 0.015 ] ], [ 0.75, 1.25 ] ) ],
+		pectoral: { u: 0.3, y: 0.0, len: 0.25, base: 0.03, rays: 12, shape: 'falcate', spread: 0.3 },
+		iris: 0xc8b050,
+	} ),
+
+	// deep sea: Atlantic bluefin, opah, sablefish, orange roughy
+	bluefin: variant( 'tuna', PATTERN.bluefin, {
+		top: scaled( SPECIES.tuna.top, 1.12 ), bot: scaled( SPECIES.tuna.bot, 1.12 ), wid: scaled( SPECIES.tuna.wid, 1.1 ),
+		eye: { u: 0.1, y: 0.032, r: 0.018 },
+		pectoral: { u: 0.3, y: 0.0, len: 0.15, base: 0.03, rays: 12, shape: 'falcate', spread: 0.3 },
+	} ),
+	// opah: a round, compressed disc, scarlet fins, white spots, sickle front of the dorsal
+	opah: {
+		pattern: PATTERN.opah, body: 0.8, sec: 2.0,
+		top: [ [ 0, 0.01 ], [ 0.03, 0.06 ], [ 0.08, 0.13 ], [ 0.16, 0.2 ], [ 0.28, 0.25 ], [ 0.42, 0.265 ], [ 0.56, 0.24 ], [ 0.7, 0.18 ], [ 0.84, 0.1 ], [ 0.95, 0.05 ], [ 1, 0.035 ] ],
+		bot: [ [ 0, 0.01 ], [ 0.03, 0.05 ], [ 0.08, 0.11 ], [ 0.16, 0.17 ], [ 0.28, 0.22 ], [ 0.42, 0.235 ], [ 0.56, 0.215 ], [ 0.7, 0.165 ], [ 0.84, 0.095 ], [ 0.95, 0.045 ], [ 1, 0.032 ] ],
+		wid: [ [ 0, 0.006 ], [ 0.05, 0.03 ], [ 0.15, 0.05 ], [ 0.3, 0.06 ], [ 0.5, 0.058 ], [ 0.7, 0.045 ], [ 0.9, 0.025 ], [ 1, 0.018 ] ],
+		mouth: { corner: 0.05, y: 0.0, tip: 0.0, protrude: 0 },
+		eye: { u: 0.13, y: 0.03, r: 0.03 }, opercle: 0.26,
+		scales: 0.008, scaleVis: 0.15, lateral: 0.75, arch: 0.35,
+		dorsal: [ soft( 0.28, 0.82, 50, [ [ 0, 0.06 ], [ 0.06, 0.2 ], [ 0.18, 0.08 ], [ 0.5, 0.04 ], [ 1, 0.02 ] ], [ 0.3, 1.0 ] ) ],
+		anal: [ soft( 0.55, 0.84, 34, [ [ 0, 0.04 ], [ 1, 0.02 ] ], [ 0.5, 0.9 ] ) ],
+		pectoral: { u: 0.3, y: 0.02, len: 0.22, base: 0.03, rays: 22, shape: 'falcate', spread: 0.25 },
+		pelvic: { u: 0.4, len: 0.14, rays: 15 },
+		caudal: { shape: 'lunate', len: 0.2, span: 0.26, fork: 0.35, rays: 19 },
+		iris: 0xd8b040, irid: 0.4, metal: 0.45,
+	},
+	sablefish: variant( 'mullet', PATTERN.sablefish, {
+		top: scaled( SPECIES.mullet.top, 0.85 ), bot: scaled( SPECIES.mullet.bot, 0.85 ),
+		mouth: { corner: 0.08, y: - 0.006, tip: - 0.002, protrude: 0.002 },
+		eye: { u: 0.1, y: 0.022, r: 0.024 },
+		scales: 0.012, scaleVis: 0.3,
+		dorsal: [ spiny( 0.3, 0.5, 18, [ [ 0, 0.05 ], [ 0.3, 0.045 ], [ 1, 0.02 ] ], [ 0.4, 0.7 ], 0.12 ), soft( 0.62, 0.76, 18, [ [ 0, 0.06 ], [ 1, 0.025 ] ], [ 0.55, 0.9 ] ) ],
+		anal: [ soft( 0.62, 0.76, 18, [ [ 0, 0.055 ], [ 1, 0.025 ] ], [ 0.55, 0.9 ] ) ],
+		caudal: { shape: 'truncate', len: 0.17, span: 0.13, fork: 0.9, rays: 17 },
+		iris: 0x404040, irid: 0.1, metal: 0.1,
+	} ),
+	// orange roughy: deep head with bony ridges, huge eyes, upturned mouth
+	roughy: variant( 'grouper', PATTERN.roughy, {
+		top: [ [ 0, 0.01 ], [ 0.03, 0.05 ], [ 0.08, 0.1 ], [ 0.15, 0.15 ], [ 0.25, 0.19 ], [ 0.38, 0.2 ], [ 0.52, 0.18 ], [ 0.66, 0.14 ], [ 0.8, 0.09 ], [ 0.92, 0.06 ], [ 1, 0.05 ] ],
+		bot: [ [ 0, 0.01 ], [ 0.03, 0.05 ], [ 0.08, 0.095 ], [ 0.15, 0.14 ], [ 0.25, 0.175 ], [ 0.38, 0.185 ], [ 0.52, 0.165 ], [ 0.66, 0.125 ], [ 0.8, 0.08 ], [ 0.92, 0.055 ], [ 1, 0.047 ] ],
+		eye: { u: 0.13, y: 0.06, r: 0.04 },
+		mouth: { corner: 0.13, y: - 0.02, tip: 0.004, protrude: 0.01 },
+		scales: 0.02, scaleVis: 0.5,
+		caudal: { shape: 'forked', len: 0.18, span: 0.15, fork: 0.5, rays: 19 },
+		iris: 0x202020, irid: 0.1, metal: 0.1,
+	} ),
+
+	// the trench: coelacanth, giant oarfish, a deep-sea anglerfish, a hadal snailfish
+	coelacanth: variant( 'grouper', PATTERN.coelacanth, {
+		body: 0.86,
+		eye: { u: 0.12, y: 0.05, r: 0.02 },
+		mouth: { corner: 0.13, y: - 0.02, tip: - 0.008, protrude: 0.004 },
+		scales: 0.03, scaleVis: 0.8,
+		dorsal: [ soft( 0.36, 0.42, 10, [ [ 0, 0.09 ], [ 0.4, 0.1 ], [ 1, 0.05 ] ], [ 0.5, 0.9 ], 0.05 ), soft( 0.66, 0.74, 20, [ [ 0, 0.06 ], [ 0.5, 0.08 ], [ 1, 0.04 ] ], [ 0.5, 0.9 ] ) ],
+		anal: [ soft( 0.68, 0.76, 20, [ [ 0, 0.06 ], [ 0.5, 0.08 ], [ 1, 0.04 ] ], [ 0.5, 0.9 ] ) ],
+		pectoral: { u: 0.3, y: - 0.03, len: 0.15, base: 0.05, rays: 20, shape: 'rounded', spread: 0.5 },
+		pelvic: { u: 0.5, len: 0.12, rays: 12 },
+		caudal: { shape: 'rounded', len: 0.17, span: 0.17, fork: 1, rays: 25 },
+		iris: 0x80a060, irid: 0.1, metal: 0.05,
+	} ),
+	// giant oarfish: a silver ribbon with a scarlet crest and a dorsal fin the whole way along
+	oarfish: {
+		pattern: PATTERN.oarfish, body: 0.97, sec: 1.8,
+		top: [ [ 0, 0.01 ], [ 0.02, 0.03 ], [ 0.06, 0.045 ], [ 0.15, 0.05 ], [ 0.4, 0.05 ], [ 0.7, 0.045 ], [ 0.9, 0.03 ], [ 1, 0.012 ] ],
+		bot: [ [ 0, 0.01 ], [ 0.02, 0.028 ], [ 0.06, 0.042 ], [ 0.15, 0.047 ], [ 0.4, 0.047 ], [ 0.7, 0.04 ], [ 0.9, 0.026 ], [ 1, 0.01 ] ],
+		wid: [ [ 0, 0.006 ], [ 0.04, 0.016 ], [ 0.2, 0.018 ], [ 0.6, 0.016 ], [ 0.9, 0.01 ], [ 1, 0.005 ] ],
+		mouth: { corner: 0.025, y: 0.0, tip: 0.0, protrude: 0.002 },
+		eye: { u: 0.04, y: 0.012, r: 0.012 }, opercle: 0.07,
+		scales: 0.0, scaleVis: 0.0, lateral: - 0.4, arch: 0.0,
+		dorsal: [ soft( 0.02, 0.99, 140, [ [ 0, 0.16 ], [ 0.02, 0.2 ], [ 0.04, 0.06 ], [ 0.1, 0.04 ], [ 1, 0.03 ] ], [ 0.3, 0.6 ], 0.02 ) ],
+		anal: [],
+		pectoral: { u: 0.08, y: - 0.01, len: 0.03, base: 0.008, rays: 10, shape: 'rounded', spread: 0.4 },
+		pelvic: { u: 0.09, len: 0.15, rays: 2 },
+		caudal: { shape: 'rounded', len: 0.03, span: 0.02, fork: 1, rays: 8 },
+		iris: 0x202020, irid: 0.6, metal: 0.8,
+	},
+	// anglerfish: a huge head and gape, a soft round body, little fins
+	angler: variant( 'grouper', PATTERN.angler, {
+		sec: 2.4,
+		top: [ [ 0, 0.02 ], [ 0.03, 0.08 ], [ 0.08, 0.14 ], [ 0.15, 0.18 ], [ 0.25, 0.2 ], [ 0.38, 0.19 ], [ 0.52, 0.15 ], [ 0.66, 0.11 ], [ 0.8, 0.07 ], [ 0.92, 0.05 ], [ 1, 0.045 ] ],
+		bot: [ [ 0, 0.03 ], [ 0.03, 0.09 ], [ 0.08, 0.15 ], [ 0.15, 0.19 ], [ 0.25, 0.2 ], [ 0.38, 0.18 ], [ 0.52, 0.14 ], [ 0.66, 0.1 ], [ 0.8, 0.065 ], [ 0.92, 0.048 ], [ 1, 0.043 ] ],
+		wid: [ [ 0, 0.02 ], [ 0.05, 0.1 ], [ 0.15, 0.15 ], [ 0.3, 0.16 ], [ 0.45, 0.13 ], [ 0.65, 0.08 ], [ 0.85, 0.045 ], [ 1, 0.03 ] ],
+		mouth: { corner: 0.2, y: 0.01, tip: 0.06, protrude: 0.03 },
+		eye: { u: 0.14, y: 0.1, r: 0.012 }, opercle: 0.34,
+		scales: 0.0, scaleVis: 0.0,
+		dorsal: [ soft( 0.62, 0.8, 6, [ [ 0, 0.05 ], [ 1, 0.03 ] ], [ 0.5, 0.9 ] ) ],
+		anal: [ soft( 0.66, 0.82, 5, [ [ 0, 0.045 ], [ 1, 0.03 ] ], [ 0.5, 0.9 ] ) ],
+		pectoral: { u: 0.38, y: - 0.04, len: 0.12, base: 0.04, rays: 16, shape: 'rounded', spread: 0.5 },
+		pelvic: { u: 0.3, len: 0.03, rays: 4 },
+		caudal: { shape: 'rounded', len: 0.16, span: 0.1, fork: 1, rays: 9 },
+		iris: 0xd0d0c0, irid: 0.0, metal: 0.0,
+	} ),
+	// hadal snailfish: a pale, soft tadpole with fins that run into the tail
+	snailfish: variant( 'mullet', PATTERN.snailfish, {
+		top: [ [ 0, 0.02 ], [ 0.03, 0.07 ], [ 0.08, 0.1 ], [ 0.16, 0.12 ], [ 0.28, 0.12 ], [ 0.42, 0.1 ], [ 0.56, 0.08 ], [ 0.7, 0.06 ], [ 0.84, 0.04 ], [ 1, 0.025 ] ],
+		bot: [ [ 0, 0.02 ], [ 0.03, 0.06 ], [ 0.08, 0.09 ], [ 0.16, 0.11 ], [ 0.28, 0.11 ], [ 0.42, 0.09 ], [ 0.56, 0.07 ], [ 0.7, 0.05 ], [ 0.84, 0.035 ], [ 1, 0.022 ] ],
+		wid: [ [ 0, 0.02 ], [ 0.05, 0.07 ], [ 0.15, 0.09 ], [ 0.3, 0.08 ], [ 0.5, 0.055 ], [ 0.7, 0.035 ], [ 0.9, 0.02 ], [ 1, 0.012 ] ],
+		mouth: { corner: 0.05, y: - 0.01, tip: 0.0, protrude: 0 },
+		eye: { u: 0.09, y: 0.035, r: 0.016 }, opercle: 0.2,
+		scales: 0.0, scaleVis: 0.0, lateral: 0.2, arch: 0.0,
+		dorsal: [ soft( 0.35, 0.99, 50, [ [ 0, 0.04 ], [ 0.5, 0.05 ], [ 1, 0.04 ] ], [ 0.6, 1.0 ] ) ],
+		anal: [ soft( 0.4, 0.99, 44, [ [ 0, 0.035 ], [ 1, 0.035 ] ], [ 0.6, 1.0 ] ) ],
+		pectoral: { u: 0.2, y: - 0.04, len: 0.14, base: 0.06, rays: 24, shape: 'rounded', spread: 0.6 },
+		pelvic: { u: 0.15, len: 0.03, rays: 4 },
+		caudal: { shape: 'rounded', len: 0.06, span: 0.05, fork: 1, rays: 10 },
+		iris: 0x101010, irid: 0.0, metal: 0.0,
+	} ),
+
+} );
+
+Object.assign( SKIN, {
+	skipjack: { back: 0x1c2c5c, flank: 0x8c98ac, belly: 0xe2e6ea, fin: 0x24304a, edge: 0x18202e, rough: 0.28 },
+	amberjack: { back: 0x5a5c3c, flank: 0xb4b29a, belly: 0xe8e4d6, fin: 0x8c7e48, edge: 0xc8a03c, rough: 0.3 },
+	wahoo: { back: 0x1a3868, flank: 0x8aa0c0, belly: 0xe0e6ee, fin: 0x1e3050, edge: 0x142440, rough: 0.28 },
+	yellowfin: { back: 0x0f1c42, flank: 0x8392a8, belly: 0xe8eaec, fin: 0xe6b828, edge: 0xd8a820, rough: 0.28 },
+	bluefin: { back: 0x0a1028, flank: 0x7c889c, belly: 0xe8eaec, fin: 0x1a2234, edge: 0x0e121c, rough: 0.28 },
+	opah: { back: 0x5c3a64, flank: 0xc87888, belly: 0xe8b0a8, fin: 0xd42a24, edge: 0xc81e1a, rough: 0.3 },
+	sablefish: { back: 0x26282c, flank: 0x484c52, belly: 0xa0a4a8, fin: 0x2a2c30, edge: 0x16181c, rough: 0.45 },
+	roughy: { back: 0xc85a28, flank: 0xe0763a, belly: 0xeaa070, fin: 0xd8622a, edge: 0xb84a1c, rough: 0.4 },
+	coelacanth: { back: 0x1c2a48, flank: 0x2a3a5c, belly: 0x445470, fin: 0x22304e, edge: 0x16203a, rough: 0.5 },
+	oarfish: { back: 0xaab4c0, flank: 0xd2d8de, belly: 0xeceef0, fin: 0xd42c3c, edge: 0xe03848, rough: 0.25 },
+	angler: { back: 0x1e1812, flank: 0x2e241c, belly: 0x4a3c30, fin: 0x1a140e, edge: 0x0a0806, rough: 0.6 },
+	snailfish: { back: 0xe0b4b4, flank: 0xecc8c4, belly: 0xf2d8d4, fin: 0xe6c2bc, edge: 0xd4a8a4, rough: 0.35 },
+} );

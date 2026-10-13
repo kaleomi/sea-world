@@ -12,6 +12,8 @@
 //   stamina   seconds of good pressure it takes to tire a typical one
 //   time      activity by time of day: 'day', 'dawnDusk', 'night' or 'any'
 //   rarity    0..1, scales how often it bites relative to the others in the same water
+//   zone      the open-ocean fish only: 'offshore', 'deep' or 'trench' (game/Zones.js); their habitat
+//             keys are offshore, abyss (the deep sea) and trench, which only open water far from home has
 export const FISH = {
 	silverside: { name: 'Hardhead silverside', sci: 'Atherinomorus stipes', lw: [ 0.0074, 3.1 ], model: 'silverside', habitat: { shallows: 1, pier: 0.6, bay: 0.2 }, kg: [ 0.02, 0.08 ], price: 3, fight: 0.05, stamina: 1.5, time: 'any', rarity: 0.2 },
 	mullet: { name: 'Striped mullet', sci: 'Mugil cephalus', lw: [ 0.0112, 2.98 ], model: 'mullet', habitat: { shallows: 1, pier: 0.4 }, kg: [ 0.4, 2.2 ], price: 5, fight: 0.3, stamina: 5, time: 'day', rarity: 0.8 },
@@ -31,9 +33,27 @@ export const FISH = {
 	tuna: { name: 'Blackfin tuna', sci: 'Thunnus atlanticus', lw: [ 0.0145, 3.0 ], model: 'tuna', habitat: { deep: 1 }, kg: [ 3, 14 ], price: 16, fight: 0.85, stamina: 16, time: 'dawnDusk', rarity: 0.5 },
 	mahi: { name: 'Mahi-mahi', sci: 'Coryphaena hippurus', lw: [ 0.0079, 3.0 ], model: 'mahi', habitat: { deep: 0.8 }, kg: [ 4, 18 ], price: 14, fight: 0.8, stamina: 15, time: 'day', rarity: 0.4 },
 	tarpon: { name: 'Tarpon', sci: 'Megalops atlanticus', lw: [ 0.0077, 3.02 ], model: 'tarpon', habitat: { pier: 0.35, bay: 0.5, shallows: 0.15 }, kg: [ 10, 45 ], price: 4, fight: 1, stamina: 24, time: 'night', rarity: 0.2 },
+
+	// offshore (半深海, 2–4 km out): roughly twice what a coastal fish fetches
+	skipjack: { name: 'Skipjack tuna', sci: 'Katsuwonus pelamis', lw: [ 0.0089, 3.2 ], model: 'skipjack', habitat: { offshore: 1 }, kg: [ 2, 8 ], price: 20, fight: 0.8, stamina: 12, time: 'dawnDusk', rarity: 1, zone: 'offshore' },
+	amberjack: { name: 'Greater amberjack', sci: 'Seriola dumerili', lw: [ 0.0217, 2.88 ], model: 'amberjack', habitat: { offshore: 1, abyss: 0.2 }, kg: [ 3, 20 ], price: 16, fight: 0.9, stamina: 18, time: 'any', rarity: 0.7, zone: 'offshore' },
+	wahoo: { name: 'Wahoo', sci: 'Acanthocybium solandri', lw: [ 0.0026, 3.2 ], model: 'wahoo', habitat: { offshore: 1 }, kg: [ 4, 22 ], price: 18, fight: 0.85, stamina: 14, time: 'day', rarity: 0.6, zone: 'offshore' },
+	yellowfin: { name: 'Yellowfin tuna', sci: 'Thunnus albacares', lw: [ 0.0157, 3.0 ], model: 'yellowfin', habitat: { offshore: 1, abyss: 0.3 }, kg: [ 5, 30 ], price: 20, fight: 0.95, stamina: 22, time: 'dawnDusk', rarity: 0.4, zone: 'offshore' },
+	// the deep sea (深海, beyond 4 km)
+	bluefin: { name: 'Atlantic bluefin tuna', sci: 'Thunnus thynnus', lw: [ 0.0185, 3.0 ], model: 'bluefin', habitat: { abyss: 1, offshore: 0.1 }, kg: [ 12, 50 ], price: 24, fight: 1, stamina: 30, time: 'dawnDusk', rarity: 0.3, zone: 'deep' },
+	opah: { name: 'Opah', sci: 'Lampris guttatus', lw: [ 0.0389, 2.95 ], model: 'opah', habitat: { abyss: 1 }, kg: [ 8, 40 ], price: 20, fight: 0.6, stamina: 18, time: 'day', rarity: 0.5, zone: 'deep' },
+	sablefish: { name: 'Sablefish', sci: 'Anoplopoma fimbria', lw: [ 0.0055, 3.2 ], model: 'sablefish', habitat: { abyss: 1, trench: 0.2 }, kg: [ 3, 15 ], price: 35, fight: 0.5, stamina: 10, time: 'night', rarity: 0.9, zone: 'deep' },
+	roughy: { name: 'Orange roughy', sci: 'Hoplostethus atlanticus', lw: [ 0.0457, 2.85 ], model: 'roughy', habitat: { abyss: 1, trench: 0.2 }, kg: [ 1.5, 7 ], price: 60, fight: 0.35, stamina: 8, time: 'any', rarity: 0.8, zone: 'deep' },
+	// the trench (海沟, north-east, 5–5.9 km out)
+	coelacanth: { name: 'Coelacanth', sci: 'Latimeria chalumnae', lw: [ 0.0122, 3.0 ], model: 'coelacanth', habitat: { trench: 1 }, kg: [ 15, 60 ], price: 30, fight: 0.7, stamina: 24, time: 'night', rarity: 0.3, zone: 'trench' },
+	oarfish: { name: 'Giant oarfish', sci: 'Regalecus glesne', lw: [ 0.0012, 3.1 ], model: 'oarfish', habitat: { trench: 1 }, kg: [ 15, 60 ], price: 25, fight: 0.55, stamina: 20, time: 'any', rarity: 0.5, zone: 'trench' },
+	angler: { name: 'Deep-sea anglerfish', sci: 'Himantolophus groenlandicus', lw: [ 0.0238, 2.88 ], model: 'angler', habitat: { trench: 1 }, kg: [ 2, 15 ], price: 100, fight: 0.45, stamina: 10, time: 'any', rarity: 0.8, zone: 'trench' },
+	snailfish: { name: 'Hadal snailfish', sci: 'Pseudoliparis swirei', lw: [ 0.008, 3.1 ], model: 'snailfish', habitat: { trench: 1 }, kg: [ 0.3, 2 ], price: 400, fight: 0.15, stamina: 5, time: 'any', rarity: 1, zone: 'trench' },
 };
 
 export const FISH_IDS = Object.keys( FISH );
+// the open-ocean fish: they bite wherever their zone is, whichever island's waters those are
+export const ZONE_FISH = FISH_IDS.filter( ( id ) => FISH[ id ].zone );
 
 // $ value of a fish; trophy-sized ones fetch a bit more per kg
 export function fishValue( id, kg ) {

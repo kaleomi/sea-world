@@ -512,6 +512,57 @@ function surface( prop, lodFade ) {
 		// huge scales with dark edges
 		let rims = smoothstep( 0.8, 0.97, sf ) * sfade * bodyK;
 		c *= 1.0 - rims * 0.35;
+	} else if ( pat == ${ PT( 'skipjack' ) } ) {
+		// skipjack: four or five dark stripes along the silvery belly, dusky finlets
+		let s = smoothstep( 0.5, 0.85, sin( h * 26.0 + 0.6 ) ) * smoothstep( -0.9, -0.6, h ) * ( 1.0 - smoothstep( -0.12, 0.05, h ) ) * smoothstep( 0.3, 0.2, z ) * bodyK;
+		c = mix( c, vec3f( 0.035, 0.045, 0.1 ), s * 0.8 );
+		c = mix( c, back, smoothstep( 0.3, 0.45, h ) * bodyK );
+		c = mix( c, vec3f( 0.2, 0.2, 0.12 ), select( 0.0, 0.7, P == ${ PA( 'FINLET' ) } ) );
+	} else if ( pat == ${ PT( 'amberjack' ) } ) {
+		// greater amberjack: an amber stripe along the flank, a dark band rising back through the eye
+		let stripe = fishBand( h, 0.12, 0.05, fwH + 0.06 ) * smoothstep( 0.4, 0.3, z ) * bodyK;
+		c = mix( c, vec3f( 0.62, 0.4, 0.1 ), stripe * 0.6 );
+		let nuchal = fishBand( y - eye.y + ( z - eye.x ) * 1.1, 0.0, 0.008, 0.008 ) * smoothstep( eye.x - 0.12, eye.x - 0.05, z ) * smoothstep( eye.x + 0.04, eye.x + 0.01, z ) * smoothstep( -0.2, 0.1, h ) * bodyK;
+		c = mix( c, vec3f( 0.06, 0.045, 0.02 ), nuchal * 0.75 );
+	} else if ( pat == ${ PT( 'wahoo' ) } ) {
+		// wahoo: cobalt tiger bars down the flanks
+		let bars = smoothstep( 0.25, 0.75, sin( z * 95.0 + n1 * 0.8 ) ) * smoothstep( -0.6, 0.0, h ) * ( 1.0 - tBelly * 0.6 ) * smoothstep( 0.36, 0.28, z ) * bodyK;
+		c = mix( c, vec3f( 0.02, 0.06, 0.22 ), bars * 0.7 );
+		c = mix( c, vec3f( 0.08, 0.1, 0.2 ), select( 0.0, 0.7, P == ${ PA( 'FINLET' ) } ) );
+	} else if ( pat == ${ PT( 'yellowfin' ) } ) {
+		// yellowfin: a golden band along the upper flank, bright yellow fins and finlets
+		let gold = fishBand( h, 0.3, 0.06, fwH + 0.06 ) * smoothstep( 0.42, 0.3, z ) * smoothstep( -0.45, -0.3, z ) * bodyK;
+		c = mix( c, vec3f( 0.68, 0.45, 0.04 ), gold * 0.6 );
+		c = mix( c, back, smoothstep( 0.34, 0.46, h ) * bodyK );
+		let bars = smoothstep( 0.7, 0.92, sin( z * 110.0 ) ) * smoothstep( 0.0, -0.35, h ) * smoothstep( 0.2, 0.1, z ) * bodyK;
+		c = mix( c, vec3f( 0.85, 0.88, 0.9 ), bars * 0.3 );
+		c = mix( c, vec3f( 0.78, 0.55, 0.03 ), select( 0.0, 0.95, P == ${ PA( 'FINLET' ) } ) );
+	} else if ( pat == ${ PT( 'bluefin' ) } ) {
+		// bluefin: near-black back, rows of pale dots on the lower flank, yellow finlets edged dark
+		let lines = smoothstep( 0.75, 0.95, sin( z * 120.0 ) ) * step( 0.45, fract( h * 14.0 ) ) * smoothstep( -0.7, -0.35, h ) * ( 1.0 - smoothstep( -0.1, 0.1, h ) ) * smoothstep( 0.3, 0.15, z ) * bodyK;
+		c = mix( c, vec3f( 0.8, 0.84, 0.88 ), lines * 0.45 );
+		c = mix( c, back, smoothstep( 0.25, 0.4, h ) * bodyK );
+		c = mix( c, vec3f( 0.7, 0.55, 0.06 ), select( 0.0, 0.9, P == ${ PA( 'FINLET' ) } ) );
+	} else if ( pat == ${ PT( 'opah' ) } || pat == ${ PT( 'coelacanth' ) } ) {
+		// opah: white spots all over a rosy body; coelacanth: sparse, irregular white flecks on blue
+		let coel = pat == ${ PT( 'coelacanth' ) };
+		let k = select( 48.0, 26.0, coel );
+		let cell = floor( vec2f( z, y ) * k );
+		let jit = vec2f( fishHash( cell + 3.1 ), fishHash( cell + 7.7 ) ) - 0.5;
+		let fc = fract( vec2f( z, y ) * k ) - 0.5 - jit * 0.5;
+		let rs = mix( 0.1, select( 0.22, 0.3, coel ), fishHash( cell + 1.3 ) );
+		let warp = select( vec2f( 1.0 ), vec2f( 1.0, 0.6 + n2 ), coel );
+		let keep = step( select( 0.35, 0.6, coel ), fishHash( cell + seed * 5.0 ) );
+		let spots = ( 1.0 - smoothstep( rs, rs + 0.08, length( fc * warp ) ) ) * keep * bodyK * ( 1.0 - tBelly * select( 0.5, 0.2, coel ) );
+		c = mix( c, vec3f( 0.85, 0.86, 0.88 ), spots * select( 0.85, 0.7, coel ) );
+	} else if ( pat == ${ PT( 'oarfish' ) } ) {
+		// giant oarfish: dark wavy streaks and spots on the silver flank
+		let streak = smoothstep( 0.68, 0.82, fishVnoise( vec2f( z * 70.0, y * 110.0 ) + seed * 9.0 ) ) * ( 1.0 - tBelly ) * bodyK;
+		c = mix( c, vec3f( 0.08, 0.09, 0.12 ), streak * 0.65 );
+	} else if ( pat == ${ PT( 'angler' ) } ) {
+		// anglerfish: mottled, velvety black
+		c *= mix( 1.0, 0.75 + 0.5 * n2, bodyK );
+		metal = 0.0;
 	}
 
 	// ---- lateral line (a row of pores along a dark line)

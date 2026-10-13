@@ -29,7 +29,7 @@ const memStore = () => {
 // ---- tiers
 ok( tierOf( 0 ) === 0 && tierOf( TIERS[ 1 ].rep - 1 ) === 0 && tierOf( TIERS[ 1 ].rep ) === 1 && tierOf( 1e6 ) === TIERS.length - 1, 'reputation maps to tiers at the thresholds' );
 ok( TIERS.every( ( x, i ) => i === 0 || ( x.rep > TIERS[ i - 1 ].rep && x.bonus > TIERS[ i - 1 ].bonus ) ), 'each tier needs more reputation and pays a bigger bonus' );
-ok( TIER_SPECIES.flat().every( ( id ) => FISH[ id ] ) && new Set( TIER_SPECIES.flat() ).size === Object.keys( FISH ).length, 'every species appears in exactly one tier' );
+ok( TIER_SPECIES.flat().every( ( id ) => FISH[ id ] ) && new Set( TIER_SPECIES.flat() ).size === Object.keys( FISH ).filter( ( id ) => ! FISH[ id ].zone ).length, 'every coastal species appears in exactly one tier (the open-ocean ones are not ordered)' );
 
 // ---- the board
 {

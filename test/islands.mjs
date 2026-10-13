@@ -3,7 +3,7 @@
 // src/world/islands/, src/world/terrain/OuterIsland.js, src/game/Bites.js, src/game/Game.js (islandAt).
 import { ISLANDS, HOME_ISLAND, OUTER_ISLANDS, OPEN_SEA, islandById } from '../src/world/islands/index.js';
 import { OuterIsland } from '../src/world/terrain/OuterIsland.js';
-import { FISH, FISH_IDS } from '../src/game/FishTable.js';
+import { FISH, FISH_IDS, ZONE_FISH } from '../src/game/FishTable.js';
 import { LEGENDS, LEGEND_IDS, rollLegend } from '../src/game/Legends.js';
 import { habitatAt, pickSpecies } from '../src/game/Bites.js';
 import { Game } from '../src/game/Game.js';
@@ -30,7 +30,8 @@ const all = Object.values( ISLANDS );
 ok( islandById( HOME_ISLAND ).id === HOME_ISLAND && islandById( 'nowhere' ).id === HOME_ISLAND, 'unknown ids fall back to the home island' );
 ok( OUTER_ISLANDS.length >= 2 && OUTER_ISLANDS.every( ( d ) => d.position && d.terrain && d.name ), 'at least two outer islands, each placed and with a terrain recipe' );
 ok( [ ...all, OPEN_SEA ].every( ( d ) => ( d.species || [] ).every( ( id ) => FISH[ id ] ) && ( d.legends || [] ).every( ( id ) => LEGENDS[ id ] ) ), 'species and legend ids are real' );
-const caught = new Set( [ ...all, OPEN_SEA ].flatMap( ( d ) => d.species || FISH_IDS ) );
+// (the open-ocean fish bite in every island's list: Game adds them, and their zone decides)
+const caught = new Set( [ ...all, OPEN_SEA ].flatMap( ( d ) => d.species || FISH_IDS ).concat( ZONE_FISH ) );
 ok( FISH_IDS.every( ( id ) => caught.has( id ) ), 'every species bites somewhere' );
 const homes = ( id ) => all.filter( ( d ) => ( d.legends || LEGEND_IDS ).includes( id ) );
 ok( LEGEND_IDS.every( ( id ) => homes( id ).length === 1 ), 'every legend hunts round exactly one island' );

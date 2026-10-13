@@ -129,11 +129,12 @@ ok( s2.addFish( 'grunt', 0.5 ).id > b.id, 'ids keep counting after a load' );
 
 		const f = FISH[ id ];
 		const lo = fishLengthCm( id, f.kg[ 0 ] ), hi = fishLengthCm( id, f.kg[ 1 ] );
-		if ( ! ( lo > 5 && hi < 200 && hi > lo && typeof f.sci === 'string' ) ) sane = false;
+		// (the giant oarfish is a ribbon: three metres for 60 kg)
+		if ( ! ( lo > 5 && hi < ( id === 'oarfish' ? 400 : 200 ) && hi > lo && typeof f.sci === 'string' ) ) sane = false;
 
 	}
 
-	ok( sane, 'every species has a scientific name and a plausible, increasing length (5–200 cm)' );
+	ok( sane, 'every species has a scientific name and a plausible, increasing length (5–200 cm, the oarfish 400)' );
 	ok( Math.abs( fishLengthCm( 'mahi', 10 ) - 108 ) < 3 && Math.abs( fishLengthCm( 'grunt', 0.84 ) - 36 ) < 2, 'length-weight: a 10 kg mahi ~108 cm, a 0.84 kg grunt ~36 cm' );
 	const m = new Map();
 	const st = new GameState( { getItem: ( k ) => m.get( k ) ?? null, setItem: ( k, v ) => m.set( k, v ) } );

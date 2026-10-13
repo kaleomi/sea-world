@@ -1,7 +1,8 @@
 import { Vector3, Color } from '../engine/index.js';
 import { WORLD } from '../world/WorldLayout.js';
 import { OPEN_SEA } from '../world/islands/index.js';
-import { FISH } from './FishTable.js';
+import { FISH, ZONE_FISH } from './FishTable.js';
+import { zoneAt, zoneHabitat, chartDepth } from './Zones.js';
 import { habitatAt, pickSpecies, rollWeight, biteDelay } from './Bites.js';
 import { CatchMinigame } from './CatchMinigame.js';
 import { GameState } from './GameState.js';
@@ -453,22 +454,26 @@ export class Game {
 
 	}
 
-	// crossing from one island's waters to another's (or out to the open sea): name the new water
+	// crossing from one island's waters to another's, or from one ocean zone to the next out at sea
+	// (Zones.js): name the new water. this.zone is the zone the boat is in (the minimap shows it).
 	updateWaters( dt, pos ) {
 
 		this._watersT = ( this._watersT || 0 ) - dt;
 		if ( this._watersT > 0 ) return;
 		this._watersT = 1;
 		const isle = this.islandAt( pos.x, pos.z );
-		if ( this._waters && isle.id !== this._waters ) {
+		const depth = Math.max( 0, - this.app.terrainData.heightAt( pos.x, pos.z ) );
+		this.zone = zoneAt( pos.x, pos.z, depth );
+		const open = isle === OPEN_SEA && depth >= 40;
+		// the open-water zone counts only away from the islands' shelves (no toast flicker along a beach)
+		const key = open ? 'sea:' + this.zone : isle.id;
+		if ( this._waters && key !== this._waters && ( open || isle !== OPEN_SEA ) ) {
 
-			this.toast( isle === OPEN_SEA
-				? t( 'Open sea · tuna and mahi roam out here' )
-				: t( 'Entering the waters of {name}', { name: t( isle.name ) } ), 3600 );
+			this.toast( open ? t( ZONE_TOASTS[ this.zone ] ) : t( 'Entering the waters of {name}', { name: t( isle.name ) } ), 4200 );
 
 		}
 
-		this._waters = isle.id;
+		if ( open || isle !== OPEN_SEA ) this._waters = key;
 
 	}
 
@@ -552,7 +557,7 @@ export class Game {
 				const h = this.habitatAtPoint( x, z, depth );
 				let rich = 0;
 				for ( const k in h ) rich += h[ k ];
-				this._sonar = { depth, fish: Math.min( 1, rich / 1.4 ) };
+				this._sonar = { depth: chartDepth( x, z, depth ), fish: Math.min( 1, rich / 1.4 ) };
 
 			}
 
@@ -610,14 +615,14 @@ export class Game {
 
 		const b = { x, z };
 		const outer = this.app.terrainData.outerAt?.( x, z );
-		if ( outer ) return habitatAt( { depth, reefDist: outer.reefDist( x, z ), pierDist: Infinity } );
+		if ( outer ) return zoneHabitat( habitatAt( { depth, reefDist: outer.reefDist( x, z ), pierDist: Infinity } ), x, z, depth );
 		const reef = WORLD.reef;
 		const reefDist = Math.hypot( b.x - reef.center.x, b.z - reef.center.z ) - reef.radius;
 		const P = this._pier;
 		const rect = ( x0, x1, z0, z1 ) => Math.hypot( Math.max( x0 - b.x, 0, b.x - x1 ), Math.max( z0 - b.z, 0, b.z - z1 ) );
 		const walk = rect( P.x - P.width / 2, P.x + P.width / 2, P.zStart, P.zEnd );
 		const head = rect( P.x - P.headWidth / 2, P.x + P.headWidth / 2, P.zEnd - P.headDepth, P.zEnd );
-		return habitatAt( { depth, reefDist, pierDist: Math.min( walk, head ) } );
+		return zoneHabitat( habitatAt( { depth, reefDist, pierDist: Math.min( walk, head ) } ), x, z, depth );
 
 	}
 
@@ -683,7 +688,8 @@ export class Game {
 
 			const h = this.habitat();
 			const isle = this.islandAt( this.rod.bobber.x, this.rod.bobber.z );
-			const species = pickSpecies( h, this.hour, Math.random, isle.species || undefined );
+			// the island's own fish, plus the open-ocean ones (they only bite where their zone is)
+			const species = pickSpecies( h, this.hour, Math.random, isle.species ? isle.species.concat( ZONE_FISH ) : undefined );
 			if ( ! species ) {
 
 				b.t = 8;
@@ -829,3 +835,11 @@ export class Game {
 
 // 1st, 2nd, 3rd, 4th: for the tournament result
 const PLACES = [ '1st', '2nd', '3rd', '4th' ];
+// out at sea, crossing into an ocean zone (Zones.js)
+const ZONE_TOASTS = {
+	coastal: 'Coastal waters · jacks, barracuda, snapper, blackfin and mahi',
+	offshore: 'Offshore waters · skipjack, amberjack, wahoo and yellowfin bite out here',
+	deep: 'The deep sea · bluefin, opah, sablefish and orange roughy, worth twice as much',
+	trench: 'The Trench · the deepest water there is; strange, priceless fish live down here',
+	shallows: 'The shallows',
+};

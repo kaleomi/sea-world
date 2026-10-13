@@ -337,7 +337,7 @@ export class GameHUD {
 		this.sonarEl.classList.toggle( 'is-on', !! sonar );
 		if ( sonar ) {
 
-			this.sonarD.textContent = `${ sonar.depth.toFixed( 1 ) } m`;
+			this.sonarD.textContent = `${ sonar.depth < 100 ? sonar.depth.toFixed( 1 ) : Math.round( sonar.depth ) } m`;
 			const n = Math.round( sonar.fish * 4 );
 			this.sonarDots.textContent = '●'.repeat( n ) + '○'.repeat( 4 - n );
 
@@ -832,7 +832,7 @@ GameHUD.prototype.renderQuest = function () {
 // the hint on a species not caught yet (FishTable habitat keys and activity times)
 const KIND_NAMES = { heaviest: 'Heaviest single fish', bag: 'Heaviest bag (total weight landed)' };
 const PLACES = [ '1st', '2nd', '3rd', '4th' ];
-const WATER_NAMES = { shallows: 'the shallows', reef: 'the reef', pier: 'the pier', bay: 'the bay', deep: 'deep water' };
+const WATER_NAMES = { shallows: 'the shallows', reef: 'the reef', pier: 'the pier', bay: 'the bay', deep: 'deep water', offshore: 'the offshore waters', abyss: 'the deep sea', trench: 'the trench (north-east)' };
 const TIME_NAMES = { day: 'by day', dawnDusk: 'at dawn and dusk', night: 'at night', any: 'any time' };
 
 function releaseMouse() {
