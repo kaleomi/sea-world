@@ -8,10 +8,11 @@
 <body>
 <script type="module">
 // Dev page: the fishing game's HUD in every state, over a flat sky / sea backdrop.
-// ?view=fight | inv | stand | shop | cast | bite | catch | record | newspecies | full
+// ?view=fight | inv | dex | stand | shop | cast | bite | catch | record | newspecies | full | milestone | legend | tour | online
 import '../src/ui/ui.css';
 import { GameHUD } from '../src/game/GameHUD.js';
 import { GameState } from '../src/game/GameState.js';
+import { place } from '../src/game/Tournament.js';
 
 const view = new URLSearchParams( location.search ).get( 'view' ) || 'fight';
 const root = document.createElement( 'div' );
@@ -26,25 +27,74 @@ document.body.append( root );
 const ui = { root, hud, toast( t ) { const e = document.createElement( 'div' ); e.className = 'tw-toast tw-glass is-in'; e.textContent = t; toasts.append( e ); } };
 const state = new GameState( null );
 state.money = 184;
+// Joe's board: one order the cooler can fill, one half done, one not started (and a bit of reputation)
+state.orders.rep = 6;
+state.orders.list = [
+	{ id: 1, species: 'grunt', count: 1, minKg: 0.6, reward: 20, rep: 1 },
+	{ id: 2, species: 'yellowtail', count: 2, minKg: 0.8, reward: 55, rep: 2 },
+	{ id: 3, species: 'parrot', count: 1, minKg: 1.6, reward: 45, rep: 2 },
+];
+state.orders.nextId = 4;
+// the tournament on offer at the stand; in ?view=tour one is running (a bag event, the catches below weighed in)
+state.circuit.offer = { kind: view === 'tour' ? 'bag' : 'species', species: view === 'tour' ? null : 'yellowtail', league: 0 };
+if ( view === 'tour' ) { state.money += 20; state.rng = ( ( s ) => () => ( ( s = ( s * 1664525 + 1013904223 ) >>> 0 ) / 4294967296 ) )( 3 ); state.enterTournament(); }
 state.addFish( 'yellowtail', 1.31, 9 );
 state.addFish( 'grunt', 0.84, 9.5 );
 state.addFish( 'jack', 4.6, 10 );
 state.addFish( 'barracuda', 3.2, 11 );
-const game = { state, sellAll() { state.sell(); }, sell( ids ) { state.sell( ids ); } };
+const game = { state, sellAll() { state.sell(); }, sell( ids ) { state.sell( ids ); }, fillOrder( id ) { return state.fillOrder( id ); }, dropOrder( id ) { return state.dropOrder( id ); }, enterTournament() { return state.enterTournament(); }, withdrawTournament() { return state.withdrawTournament(); } };
+// ?view=online: the shared-sea view, online with two others (a stand-in for net/Multiplayer)
+if ( view === 'online' ) {
+
+	const colors = [ '#e2574c', '#f2a541', '#e8d44d', '#5fbf6a', '#3fb6c8', '#4f7fe0', '#9b6ad6', '#e070b0' ];
+	const peers = new Map( [ [ 2, { name: '阿海', color: '#5fbf6a' } ], [ 3, { name: 'Marisol', color: '#9b6ad6' } ] ] );
+	game.app = { net: { status: 'online', error: null, colors, client: { peers }, settings: { name: 'Kaleomi', color: '#3fb6c8', server: 'ws://127.0.0.1:5191' },
+		players() { return [ { name: this.settings.name, color: this.settings.color, you: true }, ...peers.values() ]; }, onChange() {}, connect() {}, disconnect() {} } };
+
+}
 const h = new GameHUD( ui, game );
 const fight = { tension: 0.62, band: [ 0.35, 0.8 ], stamina: 0.55, distance: 11.4, surge: 0.1 };
-h.update( { fuel: { litres: 23, tank: 40 }, sonar: { depth: 12.4, fish: 0.5 }, fight: view === 'fight' ? fight : null, casting: view === 'cast', power: 0.7, bite: view === 'bite', aiming: true } );
+h.update( { fuel: { litres: 23, tank: 40 }, sonar: { depth: 12.4, fish: 0.5 }, fight: view === 'fight' ? fight : null, casting: view === 'cast', power: 0.7, bite: view === 'bite', aiming: true, tourney: null } );
+if ( view === 'tour' ) {
+
+	state.tickTournament( 170 );
+	const a = state.circuit.active;
+	h.update( { fuel: { litres: 23, tank: 40 }, sonar: { depth: 12.4, fish: 0.5 }, aiming: true, tourney: { left: a.left, score: a.score, place: place( state.circuit ) } } );
+	h.openStand( { name: 'Joe · Fish buyer', greeting: 'Let\'s see what you caught. Fair prices, cash.' } );
+
+}
 if ( view === 'inv' ) h.toggleInventory( true );
+if ( view === 'online' ) {
+
+	h.toggleInventory( true );
+	h.invView = 'online';
+	h.renderInventory();
+
+}
+if ( view === 'dex' ) {
+
+	// a few more species in the log, one of them at gold
+	state.addFish( 'tang', 0.5, 10 );
+	state.addFish( 'tuna', 13, 18 );
+	// one legend on the trophy wall, the rest still rumours
+	state.addLegend( 'ironjaw', 26.4 );
+	h.toggleInventory( true );
+	h.invView = 'dex';
+	h.renderInventory();
+
+}
 if ( view === 'shop' ) { state.buy( 'reel' ); h.openStand( { kind: 'shop', name: 'Marta · Chandlery', greeting: 'Line, reels, a bigger hold, diesel. What do you need?' } ); }
 if ( view === 'stand' ) h.openStand( { name: 'Joe · Fish buyer', greeting: 'Let\'s see what you caught. Fair prices, cash.' } );
 if ( view === 'fight' ) ui.toast( 'Fish on!' );
-if ( [ 'catch', 'record', 'newspecies', 'full' ].includes( view ) ) {
+if ( [ 'catch', 'record', 'newspecies', 'full', 'milestone', 'legend' ].includes( view ) ) {
 
 	// the landed-fish backdrop the card sits beside (in game: the real fish on the line)
 	document.body.style.background = 'radial-gradient(40% 50% at 62% 50%, #3d6f7a 0%, transparent 70%), linear-gradient(180deg, #6fa7d6 0%, #9cc9e8 45%, #1f8fa3 46%, #0c5f77 100%)';
 	if ( view === 'catch' ) state.addFish( 'yellowtail', 0.92, 9 );
 	if ( view === 'record' ) state.addFish( 'jack', 6.35, 9 );
 	if ( view === 'newspecies' ) state.addFish( 'mahi', 11.4, 12 );
+	if ( view === 'milestone' ) state.addFish( 'tuna', 13.2, 18 ); // the fifth species, at gold
+	if ( view === 'legend' ) state.addLegend( 'silverKing', 51.8 );
 	if ( view === 'full' ) { state.addFish( 'grouper', 12, 9 ); state.addFish( 'tarpon', 38.5, 22 ); }
 	h.showCatch( state.lastCatch );
 

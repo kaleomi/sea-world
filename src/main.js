@@ -2,6 +2,7 @@ import './core/BenchSeed.js';
 import { App } from './App.js';
 import { UI } from './ui/UI.js';
 import { AppUI } from './ui/AppUI.js';
+import { t } from './i18n/index.js';
 
 // ?bench runs in background tabs too (automation): rAF does not fire in a hidden page
 if ( /[?&]bench\b/.test( location.search ) ) {
@@ -19,7 +20,7 @@ window.__ui = ui;
 app.init( ( p, text, until ) => ui.setLoading( p, text, until ) ).then( async () => {
 
 	app.ui = new AppUI( app, ui );
-	ui.setLoading( 1, 'Ready' );
+	ui.setLoading( 1, t( 'Ready' ) );
 	await ui.hideLoader();
 	// frame-time benchmark and reference shots (see core/Bench.js): it drives the frames itself
 	if ( app.qs.has( 'bench' ) ) {
@@ -42,6 +43,15 @@ app.init( ( p, text, until ) => ui.setLoading( p, text, until ) ).then( async ()
 } ).catch( ( e ) => {
 
 	console.error( e );
-	ui.setLoadingError( 'Something went wrong: ' + e.message );
+	ui.setLoadingError( startupError( e ) );
 
 } );
+
+// what the player can do about it: most failures are a browser or GPU without WebGPU
+function startupError( e ) {
+
+	if ( ! navigator.gpu ) return t( 'This browser does not support WebGPU. Open the game in a recent Chrome, Edge or Safari.' );
+	if ( /No WebGPU adapter/.test( e && e.message ) ) return t( 'No graphics card is available to WebGPU. Turn on hardware acceleration in the browser settings, or update the graphics driver.' );
+	return t( 'Something went wrong: ' ) + ( e && e.message );
+
+}

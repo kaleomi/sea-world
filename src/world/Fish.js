@@ -8,7 +8,9 @@ import { rayGeometry, turtleGeometry } from './fish/CreatureGeometry.js';
 import { createSwimMaterial } from './fish/FishMaterial.js';
 import { bandFade } from '../materials/LODFade.js';
 import { WhaleWater } from '../ocean/WhaleWater.js';
+import { RHYTHM, fishDepthShift, fishPace } from './EcoRhythm.js';
 import { FrameUniforms } from '../engine/render/Frame.js';
+import { G } from '../core/Globals.js';
 
 // Fish and other swimmers of the reef and the bay, simulated on the CPU and drawn in a single
 // render object (ReefBatch: one indirect draw per model and level of detail) with the
@@ -241,9 +243,19 @@ export class FishSchools {
 
 	// ------------------------------------------------------------------ layout
 
+	// the sea surface this frame (frame.seaLevel). The tide lifts and drops it, and every
+	// height the shoals use is measured from it, so the whole population rides the tide.
+	surfaceY() {
+
+		return G.seaLevel.value;
+
+	}
+
+	// water depth at x, z, below the *current* surface (not mean sea level): the tide
+	// makes the shallows deepen and the flats dry out over the day.
 	depthAt( x, z ) {
 
-		return - this.terrain.heightAt( x, z );
+		return G.seaLevel.value - this.terrain.heightAt( x, z );
 
 	}
 
@@ -277,7 +289,7 @@ export class FishSchools {
 		if ( d < zone.band[ 0 ] || d > zone.band[ 1 ] ) return false;
 		if ( d < this.breakDepth( x, z ) + 0.3 ) return false;
 		const floor = Math.max( this.terrain.heightAt( x, z ), this.floorAt( x, z ) );
-		return - floor > sp.minDepth + 0.3;
+		return this.surfaceY() - floor > sp.minDepth + 0.3;
 
 	}
 
@@ -463,7 +475,7 @@ export class FishSchools {
 		const dir = rng() * TAU;
 		g.heading.set( Math.cos( dir ), 0, Math.sin( dir ) );
 		const spread = sp.mode === 'school' || sp.mode === 'fry' || sp.mode === 'jumper' ? 1.5 : sp.mode === 'bait' ? 3 : [ 'solo', 'lurk', 'glide', 'turtle', 'cruise' ].includes( sp.mode ) ? 0 : 1.2;
-		g.home.y = this.depthFor( sp, g.home.x, g.home.z, 0.5 );
+		g.home.y = this.depthFor( sp, g.home.x, g.home.z, 0.5, g.dshift ?? 0 );
 		g.goal.copy( g.home );
 		g.center.copy( g.home );
 		const kind0 = this.modelKind[ sp.model ];
@@ -510,14 +522,17 @@ export class FishSchools {
 
 	}
 
-	// preferred swimming height at x, z: depth[ 0 .. 1 ] of the water column above the bottom
-	depthFor( sp, x, z, k ) {
+	// Preferred swimming height at x, z: depth[ 0 .. 1 ] of the water column above the bottom,
+	// shifted by the hour and the weather (EcoRhythm): the small diurnal fish sink into the reef
+	// at night, the night hunters rise, rain pushes everyone off the choppy surface.
+	depthFor( sp, x, z, k, shift = 0 ) {
 
 		const floor = Math.max( this.terrain.heightAt( x, z ), this.floorAt( x, z ) );
-		const ceil = sp.ceiling;
+		const ceil = this.surfaceY() + sp.ceiling;
 		if ( sp.mode === 'surface' ) return ceil - 0.08;
 		if ( sp.mode === 'glide' ) return floor + FLOOR_CLEARANCE + 0.15;
-		const f = sp.depth[ 0 ] + ( sp.depth[ 1 ] - sp.depth[ 0 ] ) * k;
+		const d = sp.depth[ 0 ] + ( sp.depth[ 1 ] - sp.depth[ 0 ] ) * k + shift;
+		const f = d < 0 ? 0 : d > 1 ? 1 : d;
 		return Math.min( ceil - 0.2, floor + FLOOR_CLEARANCE + 0.1 + Math.max( 0, ceil - floor ) * f );
 
 	}
@@ -525,7 +540,7 @@ export class FishSchools {
 	clampY( sp, x, z, y ) {
 
 		const h = Math.max( this.terrain.heightAt( x, z ), this.floorAt( x, z ) );
-		return Math.min( sp.ceiling - 0.02, Math.max( h + FLOOR_CLEARANCE + 0.02, y ) );
+		return Math.min( this.surfaceY() + sp.ceiling - 0.02, Math.max( h + FLOOR_CLEARANCE + 0.02, y ) );
 
 	}
 
@@ -547,7 +562,7 @@ export class FishSchools {
 
 			g.pathIndex = i;
 			const p = zone.path[ i ];
-			g.goal.set( p[ 0 ], this.depthFor( sp, p[ 0 ], p[ 1 ], rng() ), p[ 1 ] );
+			g.goal.set( p[ 0 ], this.depthFor( sp, p[ 0 ], p[ 1 ], rng(), g.dshift ?? 0 ), p[ 1 ] );
 			g.timer = hold[ 0 ] + ( hold[ 1 ] - hold[ 0 ] ) * rng();
 			return;
 
@@ -582,7 +597,7 @@ export class FishSchools {
 
 			if ( ! this.fits( sp, zone, x, z ) ) continue;
 			if ( zone.sand && this.floorAt( x, z ) > this.terrain.heightAt( x, z ) + 0.1 ) continue; // rays: over sand
-			g.goal.set( x, this.depthFor( sp, x, z, rng() ), z );
+			g.goal.set( x, this.depthFor( sp, x, z, rng(), g.dshift ?? 0 ), z );
 			g.timer = hold[ 0 ] + ( hold[ 1 ] - hold[ 0 ] ) * rng();
 			return;
 
@@ -637,6 +652,16 @@ export class FishSchools {
 		this._frame ++;
 		this.time += dt;
 		this.dt = dt || 1 / 60;
+		// the hour and the weather: how high in the water column each school wants to be, and how
+		// briskly it moves about. One reading shared by every group.
+		const eco = RHYTHM.sample();
+		for ( const g of this.groups ) {
+
+			g.dshift = fishDepthShift( g.sp.name, eco );
+			g.pace = fishPace( g.sp.name, eco );
+
+		}
+
 		if ( this.whale && this.whale.ready ) ( this.whaleWater || ( this.whaleWater = new WhaleWater() ) ).update( this.whale, dt, this.spray );
 		let threat = null;
 		if ( player ) {
@@ -744,7 +769,7 @@ export class FishSchools {
 			g.breath -= dt;
 			if ( g.breath < 0 && g.breath + dt >= 0 ) {
 
-				g.goal.set( g.center.x + g.heading.x * 4, sp.ceiling, g.center.z + g.heading.z * 4 );
+				g.goal.set( g.center.x + g.heading.x * 4, this.surfaceY() + sp.ceiling, g.center.z + g.heading.z * 4 );
 				g.timer = 14;
 
 			}
@@ -860,7 +885,8 @@ export class FishSchools {
 
 			}
 
-			const cruise = sp.cruise * L * this.speedMul[ i ];
+			// pace: night and weather (EcoRhythm) — the reef dozes after dark, the hunters wake
+			const cruise = sp.cruise * L * this.speedMul[ i ] * ( g.pace ?? 1 );
 			let ax = A[ ai ] * sp.wSep, ay = A[ ai + 1 ] * sp.wSep, az = A[ ai + 2 ] * sp.wSep;
 			const c = C[ i ];
 			if ( c > 0 ) {
@@ -904,7 +930,7 @@ export class FishSchools {
 				tx = pl[ 0 ] + Math.cos( ang ) * r;
 				tz = pl[ 1 ] + Math.sin( ang ) * r;
 				const floor = this.terrain.heightAt( tx, tz );
-				ty = floor + FLOOR_CLEARANCE + 0.3 + ( sp.ceiling - floor ) * ( sp.depth[ 0 ] + ( sp.depth[ 1 ] - sp.depth[ 0 ] ) * ( ( s * 5.7 ) % 1 ) );
+				ty = floor + FLOOR_CLEARANCE + 0.3 + ( this.surfaceY() + sp.ceiling - floor ) * ( sp.depth[ 0 ] + ( sp.depth[ 1 ] - sp.depth[ 0 ] ) * ( ( s * 5.7 ) % 1 ) );
 
 			} else if ( sp.mode === 'lurk' ) {
 
@@ -989,7 +1015,7 @@ export class FishSchools {
 
 			}
 
-			const ceil = sp.ceiling;
+			const ceil = this.surfaceY() + sp.ceiling;
 			if ( y > ceil - 0.3 && ! ( sp.mode === 'jumper' && this.jump[ i ] > 0.5 ) ) ay -= ( y - ( ceil - 0.3 ) ) * 8;
 			if ( sp.mode !== 'turtle' ) ay -= vy * 1.5; // fish prefer to swim level
 
@@ -1220,7 +1246,7 @@ export class FishSchools {
 
 			this.panic[ i ] = panic;
 			// keep off the bottom and below the surface
-			ty2 = Math.min( sp.ceiling - 0.2, Math.max( ballFloor, ty2 ) );
+			ty2 = Math.min( this.surfaceY() + sp.ceiling - 0.2, Math.max( ballFloor, ty2 ) );
 			const ax = ( tx2 - x ) * kP + ( vtx - vx ) * kD + ( rng() - 0.5 ) * 0.6;
 			const ay = ( ty2 - y ) * kP + ( vty - vy ) * kD;
 			const az = ( tz2 - z ) * kP + ( vtz - vz ) * kD + ( rng() - 0.5 ) * 0.6;

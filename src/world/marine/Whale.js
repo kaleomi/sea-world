@@ -3,6 +3,7 @@ import { Material } from '../../engine/render/Material.js';
 import { ShaderModule } from '../../engine/gpu/Shader.js';
 import { LAYERS } from '../../core/SceneRenderer.js';
 import { SPRAY } from '../../fx/Spray.js';
+import { RHYTHM } from '../EcoRhythm.js';
 import { WhaleBrain } from './WhaleBrain.js';
 import { loadTexture } from './WhaleTextures.js';
 
@@ -289,6 +290,11 @@ export class Whale {
 
 		if ( ! this.ready ) return;
 		const b = this.brain;
+		// the hour and the weather: how often it comes up, how often it launches, how deep it rides
+		const eco = RHYTHM.sample();
+		b.surfaceBias = eco.whaleSurface;
+		b.breachBias = eco.whaleBreach;
+		b.deepBias = eco.whaleDeep;
 		b.update( dt );
 		this._pose();
 		this.uWater.value = b.water;

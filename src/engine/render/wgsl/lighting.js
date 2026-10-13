@@ -15,6 +15,8 @@ import { Matrix4, Vector4 } from '../../math/index.js';
 //       fn hookLocalLights( s: Surface, P, N, V, acc: ptr<function, LightAccum> )   point / spot lights
 //       fn hookEnvSpecular( R: vec3f, roughness: f32 ) -> vec3f  IBL radiance (Environment probe)
 //       fn hookEnvDiffuse( N: vec3f ) -> vec3f                   IBL irradiance / PI
+//       fn hookSurface( P: vec3f, N: vec3f, s: ptr<function, Surface> )   last word on the surface
+//                                                  before it is lit: weather wetness (src/weather/)
 //   Hooks see the material's defines (UNDERWATER_LIGHTING = 0 none / 1 lite / 2 full, HILL_SHADOW_SELF,
 //   LOCAL_LIGHTS_CHEAP, IS_WATER, ...) through the preprocessor.
 
@@ -47,6 +49,8 @@ const HOOK_DEFAULTS = {
 	localLights: 'fn hookLocalLights( s: Surface, P: vec3f, N: vec3f, V: vec3f, acc: ptr<function, LightAccum> ) {}',
 	envSpecular: 'fn hookEnvSpecular( R: vec3f, roughness: f32 ) -> vec3f { let t = sat( R.y * 0.5 + 0.5 ); return mix( frame.horizonColor * 0.6, frame.skyIrradiance * PI, t ) * frame.envIntensity; }',
 	envDiffuse: 'fn hookEnvDiffuse( N: vec3f ) -> vec3f { return mix( frame.horizonColor * 0.25, frame.skyIrradiance, N.y * 0.5 + 0.5 ) * frame.envIntensity; }',
+	// runs at the end of surfaceOf(), so it can change what the material produced (weather wetness)
+	surface: 'fn hookSurface( P: vec3f, N: vec3f, s: ptr<function, Surface> ) {}',
 };
 
 // stub modules for hooks nobody installed

@@ -1,7 +1,11 @@
 import * as THREE from '../engine/index.js';
 import { UI } from './UI.js';
+import { WEATHER, WEATHER_IDS } from '../weather/Weather.js';
+import { RHYTHM } from '../world/EcoRhythm.js';
+import { TIDE, tideStage } from '../world/Tides.js';
 import { G } from '../core/Globals.js';
 import { GroundBounce } from '../materials/GroundBounce.js';
+import { getLocale, setLocale, LOCALES, t } from '../i18n/index.js';
 
 // Binds the Tidewater UI (panel + HUD) to the running app.
 const SEA = {
@@ -37,6 +41,9 @@ export class AppUI {
 			time: app.settings.timeOfDay,
 			advance: app.settings.timeSpeed !== 0,
 			timeSpeed: app.settings.timeSpeed || 0.05,
+			tideAmplitude: app.settings.tideAmplitude,
+			tidePeriod: app.settings.tidePeriod,
+			tidePhase: app.settings.tidePhase,
 			clouds: app.clouds ? app.clouds.coverage.value : 0.45,
 			cirrus: app.clouds && app.clouds.cirrus ? app.clouds.cirrus.value : 0.5,
 			exposure: 0,
@@ -151,6 +158,17 @@ export class AppUI {
 
 		}
 
+		// ---- Tides: the sea level the whole coast rides (src/world/Tides.js). The waterline, the
+		// boat's berth, the shorebirds and the reef fish all follow it. Read-only level + stage on
+		// top, then the three numbers that shape the curve.
+		const tides = shoreTab.addFolder( 'Tides', { icon: 'wave', tooltip: 'The sea climbs and falls on its own clock (the moon, not the sun): the shoreline, the boat and the fish follow it.' } );
+		const STAGE = { rising: 'Rising', falling: 'Falling', slack: 'Slack' };
+		tides.addSlider( { label: 'Tide range', object: s, key: 'tideAmplitude', min: 0, max: 1.2, step: 0.01, format: ( v ) => `± ${ v.toFixed( 2 ) } m`, tooltip: 'How far the sea climbs above and falls below mean sea level. 0 = no tide.', onChange: ( v ) => { app.settings.tideAmplitude = v; } } );
+		tides.addSlider( { label: 'Tide period', object: s, key: 'tidePeriod', min: 180, max: 1800, step: 10, unit: 's', tooltip: 'One high and one low. A semidiurnal coast has two of each a day; here it runs on its own clock.', onChange: ( v ) => { app.settings.tidePeriod = v; } } );
+		tides.addSlider( { label: 'Tide phase', object: s, key: 'tidePhase', min: 0, max: 1, step: 0.01, tooltip: 'Where in the cycle the tide starts.', onChange: ( v ) => { app.settings.tidePhase = v; } } );
+		tides.addInfo( { label: 'Water level', get: () => `${ TIDE.level >= 0 ? '+' : '−' }${ Math.abs( TIDE.level ).toFixed( 2 ) } m`, tooltip: 'The sea surface above (or below) mean sea level right now.' } );
+		tides.addInfo( { label: 'Tide', get: () => t( STAGE[ tideStage( TIDE ) ] ), tooltip: 'Rising: the water is climbing the beach. Falling: it is drawing back down.' } );
+
 		// ---------------------------------------------------------------- Sky
 		const sky = ui.addTab( 'sky', 'Sky', 'sky' );
 		const sun = sky.addFolder( 'Sun', { icon: 'clock' } );
@@ -184,6 +202,40 @@ export class AppUI {
 
 		atmo.addSlider( { label: 'Exposure', object: s, key: 'exposure', min: - 3, max: 3, step: 0.1, unit: 'EV', onChange: ( v ) => { app.settings.exposure = 0.55 * Math.pow( 2, v ); } } );
 
+		// ---- Weather: rain, wet surfaces and lightning (src/weather/)
+		if ( app.weather ) {
+
+			const w = app.weather;
+			const wx = sky.addFolder( 'Weather', { icon: 'cloud', open: false } );
+			const pct = ( v ) => `${ Math.round( v * 100 ) }%`;
+			wx.addPresets( {
+				label: 'Weather conditions', active: w.params.preset,
+				presets: WEATHER_IDS.map( ( k ) => ( {
+					// `id` (not the label) is what `active` is matched against, so the
+					// label is free to be translated
+					id: k, label: WEATHER[ k ].label, icon: k.toLowerCase(),
+					apply: () => { w.setPreset( k ); ui.refresh(); },
+				} ) ),
+			} );
+			wx.addSlider( { label: 'Rainfall', object: w.params, key: 'rain', min: 0, max: 1, step: 0.01, format: pct, tooltip: 'Rain falling around the camera. It takes about half a minute to arrive or clear; exposed surfaces wet up while it rains and dry off slowly afterwards. Fish feed better in the rain.', onChange: ( v ) => w.setRain( v ) } );
+			wx.addSlider( { label: 'Lightning', object: w.params, key: 'lightning', min: 0, max: 1, step: 0.01, format: pct, tooltip: 'How often the storm throws a strike (it needs to be raining), with thunder delayed by the distance.', onChange: ( v ) => w.setLightning( v ) } );
+			wx.addSlider( { label: 'Gusts', object: w.params, key: 'gust', min: 0, max: 1, step: 0.01, format: pct, tooltip: 'Squalls: how much the wind swells and drops on top of the sea state, carrying the rain sideways.', onChange: ( v ) => w.setGust( v ) } );
+
+		}
+
+		// ---- Wildlife: a read-out of the shared day/night + weather rhythm (src/world/
+		// EcoRhythm.js). Nothing here is settable: the animals follow the hour (Sun) and the
+		// weather (above), and this is what they are making of it.
+		const life = sky.addFolder( 'Wildlife', { icon: 'bird', open: false, tooltip: 'What the island’s animals are doing. Read-only: they follow the hour and the weather, they are not set directly.' } );
+		const eco = () => RHYTHM.sample();
+		const asPct = ( v ) => `${ Math.round( v * 100 ) }%`;
+		life.addInfo( { label: 'Birds on the wing', get: () => asPct( eco().air ), tooltip: 'Gulls, terns and pelicans. Daylight and a dry sky keep them up; the dark, or heavy rain, puts them on a perch or on the water.' } );
+		life.addInfo( { label: 'Diving for fish', get: () => asPct( eco().forage ), tooltip: 'Terns kiting and pelicans plunging: they need light on the water and a steady air column.' } );
+		life.addInfo( { label: 'Shorebirds roosting', get: () => asPct( eco().shore ), tooltip: 'Sanderlings. At night, or in steady rain, they leave the swash and pack together above the tide line.' } );
+		life.addInfo( { label: 'Crabs out of their burrows', get: () => asPct( eco().crab ), tooltip: 'Ghost crabs come out at dusk and after dark. Rain washes them back in.' } );
+		life.addInfo( { label: 'Whale surfacing', get: () => asPct( eco().whaleSurface ), tooltip: 'How often the humpback comes up on a pass: more at dawn and after dark, less once the sea gets up — and it stops breaching altogether in a storm.' } );
+		life.addInfo( { label: 'Night on the reef', get: () => asPct( eco().night ), tooltip: 'After dark the small reef fish tuck down into the coral and hold still, and the groupers, jacks and tarpon rise to hunt.' } );
+
 		// ---------------------------------------------------------------- Camera
 		const cam = ui.addTab( 'camera', 'Camera', 'camera' );
 		const view = cam.addFolder( 'View', { icon: 'camera' } );
@@ -195,6 +247,32 @@ export class AppUI {
 
 		} } );
 		view.addButton( { label: 'Free camera (F)', icon: 'camera', onClick: () => app.setFreeCam( ! app.freeCam ) } );
+
+		// ---- Interface: the language. The panel, the HUD and the guide are built once at
+		// startup with the strings already in them, so switching means a reload: the choice
+		// is remembered by src/i18n (localStorage 'tidewater.lang') and read back on load.
+		const iface = cam.addFolder( 'Interface', { icon: 'panel', open: false } );
+		iface.addSelect( {
+			label: 'Language',
+			object: { value: getLocale() },
+			key: 'value',
+			// an object map, not { label, value } pairs: a language name is shown in its own
+			// language, so it must never go through the translator
+			options: Object.fromEntries( Object.values( LOCALES ).map( ( l ) => [ l.name, l.id ] ) ),
+			onChange: ( v ) => {
+
+				if ( v === getLocale() ) return;
+				setLocale( v );
+				try {
+
+					app.game?.state?.save();
+
+				} catch ( e ) { /* nothing saved yet: fine */ }
+
+				location.reload();
+
+			},
+		} );
 
 		// ---------------------------------------------------------------- Effects
 		const fx = ui.addTab( 'effects', 'Effects', 'effects' );

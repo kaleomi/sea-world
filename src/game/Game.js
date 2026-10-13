@@ -1,5 +1,6 @@
 import { Vector3, Color } from '../engine/index.js';
 import { WORLD } from '../world/WorldLayout.js';
+import { OPEN_SEA } from '../world/islands/index.js';
 import { FISH } from './FishTable.js';
 import { habitatAt, pickSpecies, rollWeight, biteDelay } from './Bites.js';
 import { CatchMinigame } from './CatchMinigame.js';
@@ -9,9 +10,14 @@ import { FishStand } from './FishStand.js';
 import { Chandlery } from './Chandlery.js';
 import { CatchDisplay } from './CatchDisplay.js';
 import { UPGRADES, fuelBurn } from './Gear.js';
+import { TIERS } from './Orders.js';
+import { milestoneText } from './Collection.js';
+import { LEGENDS, rollLegend, legendWeight, legendTitle } from './Legends.js';
+import { LEAGUES, DURATION, place } from './Tournament.js';
 import { GameHUD } from './GameHUD.js';
 import { Minimap } from './Minimap.js';
 import { Guide } from './Guide.js';
+import { t } from '../i18n/index.js';
 
 // how long the catch card stays up unless dismissed (ms)
 const CATCH_CARD_MS = 9000;
@@ -30,6 +36,8 @@ export class Game {
 		this.app = app;
 		this.state = new GameState();
 		this.state.load();
+		// closing or hiding the tab saves too (fuel between the periodic saves)
+		if ( typeof window !== 'undefined' ) window.addEventListener( 'pagehide', () => this.state.save() );
 		this.rod = new FishingRod( { scene: app.scene, camera: app.camera, query: app.query, terrain: app.terrainData, audio: app.audio } );
 		this.rod.onLand = ( where ) => this.onBobberLanded( where );
 		this.stand = new FishStand( { scene: app.scene, terrain: app.terrainData, colliders: app.colliders } );
@@ -105,8 +113,54 @@ export class Game {
 	buy( key ) {
 
 		const r = this.state.buy( key );
-		if ( r ) this.toast( `${ UPGRADES[ key ].name }: ${ r.label }` );
+		if ( r ) this.toast( `${ t( UPGRADES[ key ].name ) }: ${ t( r.label ) }` );
 		return r;
+
+	}
+
+	// Joe's orders (Orders.js): hand over the fish for one, or ask for a different one
+	fillOrder( id ) {
+
+		const r = this.state.fillOrder( id );
+		if ( ! r ) return null;
+		const done = t( 'Order filled · ${v} · reputation +{rep}', { v: r.reward, rep: r.rep } );
+		this.toast( r.tierUp ? `${ done } · ${ t( 'Joe now calls you: {name}', { name: t( TIERS[ this.state.tier ].name ) } ) }` : done, r.tierUp ? 4500 : 2600 );
+		if ( this.app.audio && this.app.audio.coin ) this.app.audio.coin();
+		return r;
+
+	}
+
+	dropOrder( id ) {
+
+		return this.state.dropOrder( id );
+
+	}
+
+	// tournaments (Tournament.js): entered and given up at Joe's stand
+	enterTournament() {
+
+		const a = this.state.enterTournament();
+		if ( a ) this.toast( t( '{name} has started · {min} minutes on the clock', { name: t( LEAGUES[ a.league ].name ), min: Math.round( DURATION / 60 ) } ), 3600 );
+		return a;
+
+	}
+
+	withdrawTournament() {
+
+		return this.state.withdrawTournament();
+
+	}
+
+	// the tournament clock; the result toast when it runs out
+	updateTournament( dt ) {
+
+		const r = this.state.tickTournament( dt );
+		if ( ! r ) return;
+		const name = t( LEAGUES[ r.league ].name );
+		let msg = r.prize ? t( '{name} over · you came {place} · ${v}', { name, place: t( PLACES[ r.place - 1 ] ), v: r.prize } ) : t( '{name} over · you came {place}', { name, place: t( PLACES[ r.place - 1 ] ) } );
+		if ( r.promoted ) msg += ` · ${ t( 'next up: {league}', { league: t( LEAGUES[ this.state.circuit.league ].name ) } ) }`;
+		this.toast( msg, 6000 );
+		if ( r.prize && this.app.audio && this.app.audio.coin ) this.app.audio.coin();
 
 	}
 
@@ -116,7 +170,7 @@ export class Game {
 		if ( l > 0 ) {
 
 			this._fuelOut = false;
-			this.toast( `Filled up · ${ l.toFixed( 0 ) } L` );
+			this.toast( t( 'Filled up · {n} L', { n: l.toFixed( 0 ) } ) );
 
 		}
 
@@ -267,6 +321,8 @@ export class Game {
 		if ( ! p.prompt && can ) p.prompt = this.prompt();
 
 		const aboard = p.mode === 'boat' || p.mode === 'deck';
+		this.updateTournament( dt );
+		const tour = this.state.circuit.active;
 		// the catch card's live fish portrait (or one queued thumbnail)
 		if ( this.hud && this.hud.portrait ) this.hud.portrait.update( dt );
 		if ( this.hud ) this.hud.update( {
@@ -277,6 +333,7 @@ export class Game {
 			power: rod.power,
 			bite: this.bite && this.bite.phase === 'take',
 			aiming: rod.equipped,
+			tourney: tour ? { left: tour.left, score: tour.score, place: place( this.state.circuit ) } : null,
 		} );
 		if ( this.minimap ) this.minimap.update( dt );
 		if ( this.guide ) this.guide.update( dt );
@@ -315,10 +372,33 @@ export class Game {
 
 	}
 
+	// crossing from one island's waters to another's (or out to the open sea): name the new water
+	updateWaters( dt, pos ) {
+
+		this._watersT = ( this._watersT || 0 ) - dt;
+		if ( this._watersT > 0 ) return;
+		this._watersT = 1;
+		const isle = this.islandAt( pos.x, pos.z );
+		if ( this._waters && isle.id !== this._waters ) {
+
+			this.toast( isle === OPEN_SEA
+				? t( 'Open sea · tuna and mahi roam out here' )
+				: t( 'Entering the waters of {name}', { name: t( isle.name ) } ), 3600 );
+
+		}
+
+		this._waters = isle.id;
+
+	}
+
 	// fuel burn at the helm (the engine stops when the tank is dry) and the fish finder
 	updateBoat( dt ) {
 
 		const app = this.app, b = app.boatCtl, p = app.player, s = this.state;
+		const aboard = p.mode === 'boat' || p.mode === 'deck';
+		if ( aboard ) this.updateWaters( dt, b.position );
+		if ( this._aboard && ! aboard && b.anchored ) this.toast( t( 'Anchor down · the boat waits here' ), 3000 );
+		this._aboard = aboard;
 		if ( b.driven ) {
 
 			const left = s.burn( fuelBurn( b.rpm ) * dt );
@@ -401,6 +481,8 @@ export class Game {
 	habitatAtPoint( x, z, depth ) {
 
 		const b = { x, z };
+		const outer = this.app.terrainData.outerAt?.( x, z );
+		if ( outer ) return habitatAt( { depth, reefDist: outer.reefDist( x, z ), pierDist: Infinity } );
 		const reef = WORLD.reef;
 		const reefDist = Math.hypot( b.x - reef.center.x, b.z - reef.center.z ) - reef.radius;
 		const P = this._pier;
@@ -408,6 +490,18 @@ export class Game {
 		const walk = rect( P.x - P.width / 2, P.x + P.width / 2, P.zStart, P.zEnd );
 		const head = rect( P.x - P.headWidth / 2, P.x + P.headWidth / 2, P.zEnd - P.headDepth, P.zEnd );
 		return habitatAt( { depth, reefDist, pierDist: Math.min( walk, head ) } );
+
+	}
+
+	// the island definition whose water (x, z) is in: an outer island's grid, the home island's,
+	// or the open sea between them
+	islandAt( x, z ) {
+
+		const T = this.app.terrainData;
+		const o = T.outerAt?.( x, z );
+		if ( o ) return o.def;
+		const half = T.size / 2;
+		return Math.abs( x ) < half && Math.abs( z ) < half ? WORLD.island : OPEN_SEA;
 
 	}
 
@@ -426,7 +520,15 @@ export class Game {
 
 		}
 
-		this.bite = { phase: 'wait', t: biteDelay( this.habitat(), this.hour ) };
+		this.bite = { phase: 'wait', t: biteDelay( this.habitat(), this.hour, Math.random, this.rain() ) };
+
+	}
+
+	// 0..1: how hard it is raining (fish feed better in it; see Bites.rainBiteRate)
+	rain() {
+
+		const w = this.app.weather;
+		return w ? w.rainLevel : 0;
 
 	}
 
@@ -446,7 +548,8 @@ export class Game {
 		if ( b.phase === 'wait' ) {
 
 			const h = this.habitat();
-			const species = pickSpecies( h, this.hour );
+			const isle = this.islandAt( this.rod.bobber.x, this.rod.bobber.z );
+			const species = pickSpecies( h, this.hour, Math.random, isle.species || undefined );
 			if ( ! species ) {
 
 				b.t = 8;
@@ -454,10 +557,14 @@ export class Game {
 
 			}
 
-			b.species = species;
-			b.kg = rollWeight( species );
+			// now and then, in its own conditions, a legend takes the bait instead (Legends.js)
+			const legend = rollLegend( { habitat: h, hour: this.hour, rain: this.rain(), tide: this.app.tide }, this.state.legends, Math.random, isle.legends || undefined );
+			b.legend = legend;
+			b.species = legend ? LEGENDS[ legend ].species : species;
+			b.kg = legend ? legendWeight( legend ) : rollWeight( species );
 			b.phase = 'nibble';
 			b.nibbles = 1 + Math.floor( Math.random() * 3 );
+			if ( legend ) this.toast( 'Something heavy is mouthing the bait…', 2200 );
 			b.t = 0.7 + Math.random() * 0.8;
 			b.pulse = 0;
 
@@ -478,7 +585,7 @@ export class Game {
 		} else if ( b.phase === 'take' ) {
 
 			this.toast( 'It took the bait and ran', 1800 );
-			this.bite = { phase: 'wait', t: biteDelay( this.habitat(), this.hour ) };
+			this.bite = { phase: 'wait', t: biteDelay( this.habitat(), this.hour, Math.random, this.rain() ) };
 
 		}
 
@@ -496,10 +603,12 @@ export class Game {
 		}
 
 		const g = this.state.stats;
-		this.fight = new CatchMinigame( { species: b.species, kg: b.kg, lineKg: g.lineKg, reelSpeed: g.reelSpeed, distance: Math.max( 3, this.rod.lineOut ) } );
+		const legend = b.legend ? LEGENDS[ b.legend ] : null;
+		this.fight = new CatchMinigame( { species: b.species, kg: b.kg, lineKg: g.lineKg, reelSpeed: g.reelSpeed, distance: Math.max( 3, this.rod.lineOut ), staminaMul: legend ? legend.stamina : 1, powerMul: legend ? legend.power : 1 } );
+		this.fight.legend = b.legend || null;
 		this.bite = null;
 		this.rod.hook();
-		this.toast( 'Fish on!', 1200 );
+		this.toast( legend ? t( 'Fish on! It\'s {legend}!', { legend: t( legend.name ) } ) : 'Fish on!', legend ? 2600 : 1200 );
 
 	}
 
@@ -515,18 +624,32 @@ export class Game {
 		this.fight = null;
 		this.rod.dip = 0;
 		const name = FISH[ f.species ].name;
-		if ( st === 'caught' ) {
+		if ( st === 'caught' && f.legend ) {
+
+			// a legend: Joe's bounty and the trophy wall, never the cooler
+			const info = this.state.addLegend( f.legend, f.kg );
+			if ( this.onCatch ) this.onCatch( { species: f.species, kg: f.kg, legend: f.legend } );
+			this.toast( t( info.firstLegend ? 'Legend landed: {legend} · ${v} bounty' : '{legend} again · ${v} bounty', { legend: legendTitle( f.legend ), v: info.value } ), 5000 );
+			if ( au && au.fishSplash ) au.fishSplash( this.rod.bobber, 1 );
+			if ( au && au.fishFlop ) au.fishFlop();
+			if ( this.hud ) this.landing = { species: f.species, kg: f.kg, card: info, cardT: 0 };
+			else this.landing = { species: f.species, kg: f.kg };
+			this.rod.land();
+
+		} else if ( st === 'caught' ) {
 
 			const entry = this.state.addFish( f.species, f.kg, this.hour );
+			if ( this.onCatch ) this.onCatch( { species: f.species, kg: f.kg } );
 			const info = this.state.lastCatch;
+			for ( const m of info.milestones ) this.toast( milestoneText( m ), 4500 );
 			if ( au && au.fishSplash ) au.fishSplash( this.rod.bobber, 0.8 );
 			if ( au && au.fishFlop ) au.fishFlop();
 			// the catch card (with a HUD) while the fish hangs on the line; a toast otherwise
 			if ( this.hud ) this.landing = { species: f.species, kg: f.kg, card: info, cardT: 0 };
 			else {
 
-				if ( entry ) this.toast( `${ info.record ? 'New record! ' : '' }${ name } · ${ entry.kg.toFixed( 2 ) } kg · $${ entry.value }`, 3600 );
-				else this.toast( `${ name } · ${ f.kg.toFixed( 1 ) } kg · no room in the ${ this.state.upgrades.hold > 0 ? 'hold' : 'cooler' }, let it go`, 3600 );
+				if ( entry ) this.toast( `${ info.record ? t( 'New record! ' ) : '' }${ t( '{name} · {kg} kg · ${v}', { name: t( name ), kg: entry.kg.toFixed( 2 ), v: entry.value } ) }`, 3600 );
+				else this.toast( t( '{name} · {kg} kg · no room in the {hold}, let it go', { name: t( name ), kg: f.kg.toFixed( 1 ), hold: t( this.state.upgrades.hold > 0 ? 'Hold' : 'Cooler' ) } ), 3600 );
 				this.landing = { species: f.species, kg: f.kg };
 
 			}
@@ -535,13 +658,13 @@ export class Game {
 
 		} else if ( st === 'snapped' ) {
 
-			this.toast( 'Snap! The line broke', 2400 );
+			this.toast( f.legend ? t( 'Snap! {legend} broke the line. It\'s still out there.', { legend: t( LEGENDS[ f.legend ].name ) } ) : 'Snap! The line broke', 2400 );
 			if ( au && au.lineSnap ) au.lineSnap();
 			this.rod.setState( 'idle' );
 
 		} else {
 
-			this.toast( 'It threw the hook', 2000 );
+			this.toast( f.legend ? t( '{legend} threw the hook. It\'s still out there.', { legend: t( LEGENDS[ f.legend ].name ) } ) : 'It threw the hook', 2000 );
 			this.rod.endFight();
 
 		}
@@ -569,3 +692,6 @@ export class Game {
 	}
 
 }
+
+// 1st, 2nd, 3rd, 4th: for the tournament result
+const PLACES = [ '1st', '2nd', '3rd', '4th' ];

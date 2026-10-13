@@ -1,0 +1,14 @@
+{
+  "name": "tidewater-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Multiplayer relay for Tidewater: one shared sea over WebSockets",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "license": "MIT"
+}

@@ -2,6 +2,7 @@ import { Noise2D, smoothstep, clamp, lerp } from '../util/Noise.js';
 import { WORLD } from './WorldLayout.js';
 import { softRamp, erosionNoise, sampleGrid, upsample2, boxBlur } from './terrain/TerrainNoise.js';
 import { ridgeEnvelope, SEA_STACKS, PATHS, polylineDistance } from './terrain/IslandShape.js';
+import { TERRAIN_FIELDS, validSnapshot } from './TerrainCache.js';
 
 const smin = ( a, b, k ) => {
 
@@ -43,7 +44,8 @@ const VILLAGE = WORLD.village.center;
 //            rubble, then the rock / sand / path / gully masks
 export class TerrainData {
 
-	constructor( seed = 7 ) {
+	// `cached`: a snapshot from TerrainCache (the grids generate() would make), skipping generation
+	constructor( seed = 7, cached = null ) {
 
 		this.size = WORLD.terrainSize;
 		this.res = RES;
@@ -64,10 +66,20 @@ export class TerrainData {
 		this.rockSites = []; // outcrops / stacks for the rock scatter: { x, z, r, h, kind }
 		this.pads = []; // building pads flattened by the village (trampled ground in the splat map)
 		this.paths = PATHS;
+		// the other islands out in the same sea (OuterIsland): heightAt falls through to them outside
+		// this grid, so everything that asks the ground height sees the whole archipelago
+		this.outer = [];
 		this.timings = {};
 		this._F = { wx: 0, wz: 0, f170: 0, und: 0, deep: 0, E: 0, gx: 0, gz: 0 };
 		this._out = { h: 0, rock: 0, d: 0, bz: 0, carve: 0 };
-		this.generate();
+		if ( cached && validSnapshot( cached, this.res ) ) {
+
+			for ( const [ name ] of TERRAIN_FIELDS ) this[ name ] = cached[ name ];
+			this.rockSites = cached.rockSites;
+			this.fromCache = true;
+
+		} else this.generate();
+
 		this.buildMinMax();
 
 	}
@@ -868,12 +880,28 @@ export class TerrainData {
 
 		const { res, texel, origin, heights } = this;
 		const fx = ( x - origin ) / texel - 0.5, fz = ( z - origin ) / texel - 0.5;
-		if ( fx < 0 || fz < 0 || fx >= res - 1 || fz >= res - 1 ) return - 90;
+		if ( fx < 0 || fz < 0 || fx >= res - 1 || fz >= res - 1 ) return this.outerHeightAt( x, z );
 		const i = Math.floor( fx ), j = Math.floor( fz );
 		const tx = fx - i, tz = fz - j;
 		const k = j * res + i;
 		const a = heights[ k ], b = heights[ k + 1 ], c = heights[ k + res ], d = heights[ k + res + 1 ];
 		return ( a * ( 1 - tx ) + b * tx ) * ( 1 - tz ) + ( c * ( 1 - tx ) + d * tx ) * tz;
+
+	}
+
+	// ground height outside the home grid: the outer island there, or the deep ocean floor
+	outerHeightAt( x, z ) {
+
+		for ( const o of this.outer ) if ( o.contains( x, z ) ) return o.heightAt( x, z );
+		return - 90;
+
+	}
+
+	// the outer island whose grid holds world (x, z), or null (home grid or open sea)
+	outerAt( x, z ) {
+
+		for ( const o of this.outer ) if ( o.contains( x, z ) ) return o;
+		return null;
 
 	}
 

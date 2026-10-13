@@ -1,5 +1,6 @@
 import * as THREE from '../../engine/index.js';
 import { G } from '../../core/Globals.js';
+import { RHYTHM } from '../EcoRhythm.js';
 import { WORLD } from '../WorldLayout.js';
 import { SPRAY } from '../../fx/Spray.js';
 import { mulberry32 } from '../../util/Noise.js';
@@ -266,21 +267,22 @@ export class Birds {
 
 	// ------------------------------------------------------------------ update
 
-	update( dt, viewer, batch, camera ) {
+	// eco: the shared day/night + weather reading (EcoRhythm). Sampled here if nobody passed one.
+	update( dt, viewer, batch, camera, eco = RHYTHM.sample() ) {
 
 		this.time += dt;
 		this.lastViewer = viewer;
+		this.eco = eco;
 		this.wind.set( G.windDir.value.x, G.windDir.value.y ).multiplyScalar( G.windSpeed.value );
-		const day = 1 - G.night.value;
 		this.updateSquad( dt );
 		for ( const a of this.agents ) {
 
 			switch ( a.kind ) {
 
-				case 'gull': this.updateGull( a, dt, viewer, day ); break;
-				case 'tern': this.updateTern( a, dt, viewer ); break;
-				case 'pelican': this.updatePelican( a, dt, viewer ); break;
-				case 'frigate': this.updateFrigate( a, dt ); break;
+				case 'gull': this.updateGull( a, dt, viewer, eco ); break;
+				case 'tern': this.updateTern( a, dt, viewer, eco ); break;
+				case 'pelican': this.updatePelican( a, dt, viewer, eco ); break;
+				case 'frigate': this.updateFrigate( a, dt, eco ); break;
 
 			}
 
@@ -471,9 +473,11 @@ export class Birds {
 
 	// ------------------------------------------------------------------ gulls
 
-	updateGull( a, dt, viewer, day ) {
+	updateGull( a, dt, viewer, eco ) {
 
 		const f = a.f;
+		// roosting: night, or rain heavy enough to sit out
+		const roost = eco.roost > 0.45;
 		switch ( a.state ) {
 
 			case 'perched': {
@@ -483,7 +487,8 @@ export class Birds {
 				const th = this.threat( viewer, P.pos[ 0 ], P.pos[ 1 ], P.pos[ 2 ] );
 				const flush = FLUSH[ BIRD.GULL ] * ( a.perch.kind === 'sand' ? 1.6 : 1 );
 				const boatGone = a.perch.kind === 'boat' && ( this.boat.driven || this.boat.speed > 0.8 );
-				a.t -= dt * day;
+				// the urge to move on slows with the light and all but stops in the rain
+				a.t -= dt * eco.day * ( 1 - 0.85 * eco.rain );
 				if ( th < flush || boatGone ) {
 
 					a.alarm = ( a.alarm || 0 ) + dt;
@@ -519,9 +524,9 @@ export class Birds {
 
 					// next: another waypoint, a spell of circling on an updraft, or a perch
 					const r = this.rng();
-					if ( r < 0.3 || day < 0.3 ) {
+					if ( r < 0.3 || roost ) {
 
-						const p = this.pickPerch( a, viewer, day < 0.3 );
+						const p = this.pickPerch( a, viewer, roost );
 						if ( p ) {
 
 							a.state = 'approach';
@@ -657,7 +662,7 @@ export class Birds {
 
 	// ------------------------------------------------------------------ terns
 
-	updateTern( a, dt, viewer ) {
+	updateTern( a, dt, viewer, eco ) {
 
 		const f = a.f, L = a.lane;
 		const wh = this.water.height( a, f.x, f.z );
@@ -673,6 +678,15 @@ export class Birds {
 				f.headPitch += ( 0.7 - f.headPitch ) * approach( 3, dt );
 				this.flyTo( a, dt, f.x + a.dir * 40, L.y + Math.sin( this.time * 0.4 + a.id ) * 1.5, L.z + Math.sin( this.time * 0.13 + a.id * 2 ) * 12, f.cfg.speed, 1, 0.8 );
 				if ( a.t <= 0 ) {
+
+					// kiting into the wind costs a lot: in the dark, or in a gusty rain, they just
+					// keep beating up and down the lane
+					if ( eco.forage < 0.25 ) {
+
+						a.t = 6 + this.rng() * 8;
+						break;
+
+					}
 
 					a.state = 'hover';
 					a.t = 1.5 + this.rng() * 2.5;
@@ -702,7 +716,8 @@ export class Birds {
 				if ( a.t <= 0 ) {
 
 					f.windK = 0.35;
-					if ( this.rng() < 0.45 ) {
+					// they only go down when they can see something down there
+					if ( this.rng() < 0.45 * eco.forage ) {
 
 						a.state = 'dive';
 						a.t = 0;
@@ -877,13 +892,32 @@ export class Birds {
 
 	}
 
-	updatePelican( a, dt, viewer ) {
+	// Come down onto the water and bob there: how the skimming line sits out the dark and the rain.
+	settleOnWater( a ) {
+
+		const f = a.f;
+		a.state = 'float';
+		a.t = 0;
+		a.floatYaw = f.yaw;
+		f.twirl = 0;
+		f.dive = 0;
+		f.y = Math.max( this.water.height( a, f.x, f.z ), 0 );
+		f.vy = 0;
+		f.P.fresh = true;
+
+	}
+
+	updatePelican( a, dt, viewer, eco ) {
 
 		const f = a.f;
 		switch ( a.state ) {
 
 			case 'line':
-				this.squadMember( a, dt );
+
+				// the line skims in ground effect: no light, no line. They drop onto the water
+				// and raft there until the weather or the hour turns.
+				if ( eco.air < 0.35 ) this.settleOnWater( a );
+				else this.squadMember( a, dt );
 				break;
 
 			case 'perched': {
@@ -917,7 +951,16 @@ export class Birds {
 				this.flyTo( a, dt, c.x + Math.cos( ang ) * c.r, c.y, c.z + Math.sin( ang ) * c.r, f.cfg.speed * 0.9, 1, 1.2 );
 				if ( a.t <= 0 ) {
 
-					if ( this.rng() < 0.6 ) {
+					// a bird of the line goes back to it once the light and the weather allow
+					if ( a.slot !== undefined && eco.air > 0.6 && this.rng() < 0.5 ) {
+
+						a.state = 'line';
+						break;
+
+					}
+
+					// no plunging for fish you cannot see
+					if ( this.rng() < 0.6 * eco.air ) {
 
 						a.state = 'dive';
 						a.t = 0;
@@ -996,7 +1039,8 @@ export class Birds {
 				P.tailPitch = - 0.1;
 				P.tailSpread = 0.9;
 				const th = this.threat( viewer, f.x, f.y, f.z );
-				if ( a.t > 10 + ( a.id % 4 ) * 3 || th < 9 ) {
+				// they sit out the dark and the rain on the water (being too close still flushes them)
+				if ( ( a.t > 10 + ( a.id % 4 ) * 3 && eco.air > 0.35 ) || th < 9 ) {
 
 					a.state = 'watertakeoff';
 					a.t = 0;
@@ -1076,17 +1120,21 @@ export class Birds {
 
 	// ------------------------------------------------------------------ frigatebirds
 
-	updateFrigate( a, dt ) {
+	updateFrigate( a, dt, eco ) {
 
 		const f = a.f, c = a.circle;
-		// the circle drifts downwind and is pulled back home; height breathes slowly
-		c.t += dt;
+		// the circle drifts downwind and is pulled back home; height breathes slowly. Gusts are
+		// what they are riding: more of them means a wider, faster, higher ring. In the dark, or
+		// in rain, they come down low and tighten up.
+		const drive = eco ? eco.soar : 1;
+		c.t += dt * ( 0.6 + 0.4 * drive );
 		c.x += ( this.wind.x * 0.3 + ( a.home.x - c.x ) * 0.01 ) * dt;
 		c.z += ( this.wind.y * 0.3 + ( a.home.z - c.z ) * 0.01 ) * dt;
-		const y = c.y + Math.sin( c.t * 0.05 ) * 20;
+		const y = c.y + Math.sin( c.t * 0.05 ) * 20 + ( drive - 0.45 ) * 26;
 		const ang = Math.atan2( f.z - c.z, f.x - c.x ) + c.dir * 0.45;
 		f.headYaw += ( c.dir * 0.25 - f.headYaw ) * approach( 1, dt );
-		this.flyTo( a, dt, c.x + Math.cos( ang ) * c.r, y, c.z + Math.sin( ang ) * c.r, f.cfg.speed, f.y < y - 25 ? 1 : 0, 1.4 );
+		const r = c.r * ( 0.7 + 0.6 * drive );
+		this.flyTo( a, dt, c.x + Math.cos( ang ) * r, y, c.z + Math.sin( ang ) * r, f.cfg.speed * ( 0.6 + 0.4 * drive ), f.y < y - 25 ? 1 : 0, 1.4 );
 
 	}
 

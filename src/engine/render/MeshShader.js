@@ -265,6 +265,11 @@ fn surfaceOf( in: FragInput ) -> Surface {
 	s.metalness = mat.metalness;
 	s.emissive = mat.emissive;
 	materialSurface( in, &s );
+	// the scene's last word on the surface (weather wetness). Depth passes do not link the lighting
+	// hooks (they only need alpha), so the call is compiled out there.
+#if HAS_SURFACE_HOOK
+	hookSurface( in.P, in.N, &s );
+#endif
 	return s;
 }
 
@@ -370,11 +375,13 @@ struct FragOut {
 
 	// modules: lighting (with the installed hooks) for colour passes, or whenever a material module needs it
 	let modules = [ commonModule, surfaceModule, ...material.modules ];
+	let hasHooks = false;
 	const needsLighting = kind !== 'depth' || collectModules( material.modules ).includes( lightingModule );
-	if ( needsLighting ) modules = [ commonModule, surfaceModule, ...hookModules(), lightingModule, ...material.modules ];
+	if ( needsLighting ) modules = [ commonModule, surfaceModule, ...hookModules(), lightingModule, ...material.modules ], hasHooks = true;
 	// custom-shaded materials (the water) that only need sunShadow(): no scene lighting hooks, whose
 	// modules would add their uniform buffers / textures to the pipeline (12 uniform buffers per stage)
-	if ( material.lightingHooks === false && ! collectModules( material.modules ).includes( lightingModule ) ) modules = [ commonModule, surfaceModule, shadowModule, ...material.modules ];
+	if ( material.lightingHooks === false && ! collectModules( material.modules ).includes( lightingModule ) ) modules = [ commonModule, surfaceModule, shadowModule, ...material.modules ], hasHooks = false;
+	defs.HAS_SURFACE_HOOK = hasHooks ? 1 : 0;
 
 	return {
 		code,

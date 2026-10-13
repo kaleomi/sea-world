@@ -26,7 +26,7 @@ export class ComputeKernel {
 		this.workgroupSize = workgroupSize;
 		const [ x, y = 1, z = 1 ] = workgroupSize;
 		const body = code.replace( /\bWG_X\b/g, x ).replace( /\bWG_Y\b/g, y ).replace( /\bWG_Z\b/g, z );
-		const c = composeShader( { modules, bindings, code: body, defines, stage: 'compute', label } );
+		const c = composeShader( { modules, bindings, code: body, defines, stage: 'compute', label, entry: entryPoint } );
 		this.source = c.code;
 		this.bindings = c.bindings;
 		this.group0 = c.group0;

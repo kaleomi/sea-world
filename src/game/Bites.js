@@ -36,12 +36,12 @@ export function activity( pref, hour ) {
 }
 
 // Weighted pick of the species that bites here; null when nothing lives here.
-// rng: () => [0, 1)
-export function pickSpecies( habitat, hour, rng = Math.random ) {
+// rng: () => [0, 1); ids: the species on this island (WORLD.island.species), all by default
+export function pickSpecies( habitat, hour, rng = Math.random, ids = FISH_IDS ) {
 
 	let total = 0;
 	const w = [];
-	for ( const id of FISH_IDS ) {
+	for ( const id of ids ) {
 
 		const f = FISH[ id ];
 		let hw = 0;
@@ -57,11 +57,11 @@ export function pickSpecies( habitat, hour, rng = Math.random ) {
 	for ( let i = 0; i < w.length; i ++ ) {
 
 		r -= w[ i ];
-		if ( r <= 0 ) return FISH_IDS[ i ];
+		if ( r <= 0 ) return ids[ i ];
 
 	}
 
-	return FISH_IDS[ FISH_IDS.length - 1 ];
+	return ids[ ids.length - 1 ];
 
 }
 
@@ -74,8 +74,17 @@ export function rollWeight( id, rng = Math.random ) {
 
 }
 
+// Fish feed better in the rain: it washes food into the water, dims the light and breaks up the
+// surface, so the line is harder to see. Returns a multiplier on how often something takes the bait.
+export function rainBiteRate( rain = 0 ) {
+
+	return 1 + 0.85 * Math.min( 1, Math.max( 0, rain ) );
+
+}
+
 // Seconds until the next bite at this spot: richer water bites sooner. Infinity when barren.
-export function biteDelay( habitat, hour, rng = Math.random ) {
+// rain: 0..1 (see src/weather/), from App through Game.
+export function biteDelay( habitat, hour, rng = Math.random, rain = 0 ) {
 
 	let rich = 0;
 	for ( const k in habitat ) rich += habitat[ k ];
@@ -83,7 +92,7 @@ export function biteDelay( habitat, hour, rng = Math.random ) {
 	// open water between the named habitats still has fish: never much slower than a poor spot
 	rich = Math.max( rich, 0.35 );
 	const light = hour > 6 && hour < 19 ? 1 : 0.8;
-	const mean = 8 / ( Math.min( rich, 1.6 ) * light );
+	const mean = 8 / ( Math.min( rich, 1.6 ) * light * rainBiteRate( rain ) );
 	return 2 + - Math.log( 1 - rng() * 0.98 ) * mean * 0.6;
 
 }

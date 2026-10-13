@@ -1,6 +1,7 @@
 import { Vector3, Sphere, Mesh, BufferGeometry, BufferAttribute } from '../engine/index.js';
 import { GPU, StorageBuffer, UniformBlock, ShaderModule, ComputeKernel, Material, Readback, commonModule, LAYERS } from '../engine/webgpu.js';
 import { GRAVITY, G } from '../engine/render/Frame.js';
+import { RHYTHM } from '../world/EcoRhythm.js';
 import { makeLaceTexture, LACE_TILE } from './SurfFoam.js';
 
 // Plunging breakers along the main beach.
@@ -162,6 +163,7 @@ fn breakersSprayShadow( p: vec3f, seedTag: f32 ) -> f32 {
 		if ( this.surface && this.surface.amplitude ) this.uniforms.fields.amplitude.value = this.surface.amplitude.value;
 		if ( this.kernel ) this.kernel.dispatch( Math.ceil( this.NS / 64 ) );
 		this._budget();
+		if ( this.breakerBio ) this.breakerBio.value = RHYTHM.sample().glow;
 
 	}
 
@@ -632,7 +634,7 @@ const BRK_NV: f32 = ${ f( NV ) };
 			side: 'double',
 			blending: 'premultiplied',
 			modules: [ lipModule ],
-			uniforms: { sheet: [ 'f32', 1 ] },
+			uniforms: { sheet: [ 'f32', 1 ], breakerBio: [ 'f32', 0 ] },
 			textures: { brkLace: lace },
 			storage: { breakersCrest: this.crest },
 			attributes: { sheetId: 'vec4f' },
@@ -776,13 +778,18 @@ const BRK_NV: f32 = ${ f( NV ) };
 	let tip = 1.0 - smoothstep( 0.93, 1.0, edge );
 	let alpha = in.vs.vLipFade * tip * mat.sheet * mix( 1.0, clumpW, wh );
 	let aF = aer * 0.92;
-	let col = foamLit * mix( 1.0, clumps * 0.4 + 0.75, wh ) * aF + cW * ( 1.0 - aF );
+	// bioluminescence: plankton in the foam flash as the lip tears into aerated water. Concen-
+	// trated where the curtain is actually being torn (the rim and the filaments), fades with the
+	// rest of the foam. Their own light, so unlike foamLit above it does not need the sun or the sky.
+	let bio = mat.breakerBio * ( max( rim, fil ) + 0.35 * aF ) * 1.5;
+	let col = foamLit * mix( 1.0, clumps * 0.4 + 0.75, wh ) * aF + cW * ( 1.0 - aF ) + bio * vec3f( 0.18, 0.85, 1.0 );
 	let aOut = ( aF + aW * ( 1.0 - aF ) ) * alpha;
 	(*r).color = vec4f( col * alpha, aOut );
 `,
 		} );
 		// the lip opacity multiplier is the material's uniform
 		this.params.sheet = mat.uniforms.sheet;
+		this.breakerBio = mat.uniforms.breakerBio;
 		this.material = mat;
 
 		const mesh = this.mesh = new Mesh( geo, mat );

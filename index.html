@@ -1,13 +1,13 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
 	<meta charset="utf-8" />
 	<meta name="viewport" content="width=device-width, initial-scale=1" />
-	<title>Tidewater</title>
+	<title>潮水湾 Tidewater</title>
 	<link rel="preload" as="image" href="ui/keyart-720.jpg" imagesrcset="ui/keyart-720.jpg 1280w, ui/keyart.jpg 2560w" imagesizes="100vw" />
 	<link rel="preconnect" href="https://fonts.googleapis.com" />
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Caveat+Brush&family=Kalam:wght@400;700&display=swap" rel="stylesheet" />
+	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Caveat+Brush&family=Kalam:wght@400;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet" />
 	<link rel="stylesheet" href="/src/ui/ui.css" />
 	<style>
 		html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000; }
@@ -20,33 +20,33 @@
 <body>
 	<div id="app"></div>
 	<div id="fps">-- fps</div>
-	<div id="loader" role="status" aria-live="polite" aria-label="Loading Tidewater">
+	<div id="loader" role="status" aria-live="polite" aria-label="正在载入《潮水湾》">
 		<img class="loader-art" src="ui/keyart-720.jpg" srcset="ui/keyart-720.jpg 1280w, ui/keyart.jpg 2560w" sizes="100vw" alt="" decoding="async" fetchpriority="high" onload="this.classList.add('is-in')" />
 		<div class="loader-scrim"></div>
 		<div class="loader-inner">
 			<div class="loader-brand">
-				<p class="loader-kicker">An island fishing game</p>
+				<p class="loader-kicker">一座小岛的钓鱼游戏</p>
 				<h1 class="loader-title">TIDEWATER</h1>
-				<p class="loader-tagline">Take the boat out, work the reef and the deep water, and sell your catch to Joe before dark.</p>
+				<p class="loader-tagline">驾船出海，在礁石区和深水区下钩，赶在天黑前把渔获卖给乔。</p>
 			</div>
 			<div class="loader-panel">
 				<div class="loader-row">
-					<span class="loader-status">Starting…</span>
+					<span class="loader-status">正在启动…</span>
 					<span class="loader-meta"><span class="loader-pct">0%</span><span class="loader-time">0:00</span></span>
 				</div>
 				<div class="loader-bar"><div class="loader-fill"></div><div class="loader-glint"></div></div>
-				<div class="loader-note">The first launch compiles the shaders and can take a minute or two. Later visits load much faster.</div>
+				<div class="loader-note">首次启动需要编译着色器，可能要一两分钟。之后再来就会快很多。</div>
 				<div class="loader-tips">
-					<span class="loader-tip-label">Tip</span>
+					<span class="loader-tip-label">提示</span>
 					<div class="loader-tip-list">
-						<p class="loader-tip">Press <kbd>R</kbd> for the rod. Hold the left mouse button to wind up, release to cast: the longer you hold, the farther it goes.</p>
-						<p class="loader-tip">Watch the bobber. A few nibbles, then it's pulled under: click the left mouse button that moment to set the hook.</p>
-						<p class="loader-tip">In a fight, hold to reel but keep the line tension in the green. Ease off when the fish runs, or the line snaps.</p>
-						<p class="loader-tip">What bites depends on where you fish: the shallows, the reef, the deep water past the drop-off, and the time of day.</p>
-						<p class="loader-tip">Joe at the fish stand by the pier buys your catch. Fish are worth more by weight, so bring the big ones in.</p>
-						<p class="loader-tip">Marta at the boathouse sells upgrades: stronger line, a faster reel, a bigger hold, more fuel and a fish finder.</p>
-						<p class="loader-tip">Press <kbd>E</kbd> at the boat to board, at the wheel to take the helm, and again to step away and walk the deck.</p>
-						<p class="loader-tip">Press <kbd>I</kbd> for your cooler and the fish log. Deck lights from Marta let you fish after dark.</p>
+						<p class="loader-tip">按 <kbd>R</kbd> 取出钓竿。按住鼠标左键蓄力，松手抛竿：按得越久，抛得越远。</p>
+						<p class="loader-tip">盯着浮漂。先是几次试探，然后它会被拖入水中——就在那一刻点击左键提竿刺鱼。</p>
+						<p class="loader-tip">搏鱼时按住收线，但要把张力保持在绿色区间。鱼发力时要松手，否则会断线。</p>
+						<p class="loader-tip">什么鱼咬钩取决于你在哪里钓：浅滩、礁石区、断崖外的深水区，还有一天中的时段。</p>
+						<p class="loader-tip">栈桥边鱼摊的乔会收购你的渔获。鱼按重量计价，所以尽量把大鱼带回来。</p>
+						<p class="loader-tip">船屋的玛尔塔出售升级件：更结实的钓线、更快的卷线器、更大的鱼舱、更多燃料和探鱼器。</p>
+						<p class="loader-tip">走到船边按 <kbd>E</kbd> 登船，走到舵轮前按 <kbd>E</kbd> 掌舵，再按一次离开舵位在甲板上走动。</p>
+						<p class="loader-tip">按 <kbd>I</kbd> 查看鱼箱和钓鱼日志。从玛尔塔那里买甲板灯，天黑后也能钓鱼。</p>
 					</div>
 				</div>
 			</div>

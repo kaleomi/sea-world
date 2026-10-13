@@ -225,6 +225,7 @@ function describe( name, spec, stage ) {
 	if ( spec.storageTexture ) {
 
 		const t = resolve( spec.storageTexture );
+		if ( ! t ) throw new Error( `binding ${ name }: storageTexture is null (a resource is not built yet)` );
 		const access = spec.access || 'write';
 		const dim = spec.viewDimension || spec.view?.dimension || t.defaultViewDimension;
 		const v = stage === 'compute' ? vis : GPUShaderStage.FRAGMENT;
@@ -238,6 +239,7 @@ function describe( name, spec, stage ) {
 	if ( spec.texture ) {
 
 		const t = resolve( spec.texture );
+		if ( ! t ) throw new Error( `binding ${ name }: texture is null (a resource is not built yet)` );
 		const dim = spec.viewDimension || spec.view?.dimension || t.defaultViewDimension;
 		let sampleType = spec.sampleType || t.sampleType;
 		let wgsl = spec.wgslType || t.wgslType( dim );
@@ -337,6 +339,7 @@ export class BindingSet {
 			const st = stageOf[ this.names[ i ] ];
 			if ( st === 'fragment' && ( l.visibility & GPUShaderStage.FRAGMENT ) ) l.visibility = GPUShaderStage.FRAGMENT;
 			if ( st === 'vertex' && ( l.visibility & GPUShaderStage.VERTEX ) ) l.visibility = GPUShaderStage.VERTEX;
+			if ( st === 'none' ) l.visibility = 0;
 
 		}
 
@@ -516,7 +519,7 @@ export function group0ForBlock( block, stage = 'render' ) {
 // Assemble a full WGSL source: structs, group 0/1 declarations, module code, main code.
 //   modules: ShaderModule[]; bindings: extra { name: spec } (material resources); code: main WGSL
 // returns { code, bindings: BindingSet (group 1), group0: BindingSet }
-export function composeShader( { modules = [], bindings = {}, code = '', defines = {}, stage = 'render', label = 'shader', header = '' } ) {
+export function composeShader( { modules = [], bindings = {}, code = '', defines = {}, stage = 'render', label = 'shader', header = '', entry = 'main' } ) {
 
 	const mods = collectModules( modules );
 	const specs = {};
@@ -532,8 +535,9 @@ export function composeShader( { modules = [], bindings = {}, code = '', defines
 	let demote = null;
 	if ( stage === 'render' && /@vertex\s+fn\s+vs\b/.test( code ) ) {
 
-		// bindings only one entry point can reach are declared for that stage only (per-stage limits:
-		// 12 uniform buffers, 16 sampled textures on some adapters)
+		// bindings only one entry point can reach are declared for that stage only, and bindings
+		// neither can reach (the parts of a shared module this shader doesn't call) for no stage at
+		// all (per-stage limits: 12 uniform buffers, 16 to 32 sampled textures)
 		let all = '';
 		for ( const m of mods ) all += m.code + '\n';
 		const full = preprocess( all + code, defines );
@@ -542,7 +546,8 @@ export function composeShader( { modules = [], bindings = {}, code = '', defines
 		stageOf = {};
 		for ( const k in specs ) {
 
-			if ( ! usedV.has( k ) && ( ! usedF || usedF.has( k ) ) ) stageOf[ k ] = 'fragment';
+			if ( ! usedV.has( k ) && ! usedF?.has( k ) ) stageOf[ k ] = 'none';
+			else if ( ! usedV.has( k ) ) stageOf[ k ] = 'fragment';
 			else if ( usedF && ! usedF.has( k ) && usedV.has( k ) ) stageOf[ k ] = 'vertex';
 
 		}
@@ -572,6 +577,17 @@ export function composeShader( { modules = [], bindings = {}, code = '', defines
 			}
 
 		}
+
+	}
+
+	if ( stage === 'compute' ) {
+
+		// as above: bindings the entry point can't reach are visible to no stage
+		let all = '';
+		for ( const m of mods ) all += m.code + '\n';
+		const used = reachableIdentifiers( preprocess( all + code, defines ), entry );
+		stageOf = {};
+		for ( const k in specs ) if ( ! used.has( k ) ) stageOf[ k ] = 'none';
 
 	}
 

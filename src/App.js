@@ -19,10 +19,13 @@ import { SkyProClouds } from './sky/SkyProClouds.js';
 import { Environment } from './sky/Environment.js';
 
 import { TerrainData } from './world/TerrainData.js';
+import { terrainCacheKey, loadTerrain, saveTerrain, terrainSnapshot } from './world/TerrainCache.js';
 import { TerrainGPU } from './world/TerrainGPU.js';
 import { Terrain } from './world/Terrain.js';
 import { computeShoreField } from './world/ShoreField.js';
 import { WORLD } from './world/WorldLayout.js';
+import { OUTER_ISLANDS } from './world/islands/index.js';
+import { OuterIsland } from './world/terrain/OuterIsland.js';
 import { Colliders } from './world/Colliders.js';
 import { Village } from './world/Village.js';
 import { Reef } from './world/Reef.js';
@@ -31,6 +34,7 @@ import { Rocks } from './world/Rocks.js';
 import { Debris } from './world/Debris.js';
 import { Wildlife } from './world/wildlife/Wildlife.js';
 import { Whale } from './world/marine/Whale.js';
+import { TIDE, TIDE_PERIOD } from './world/Tides.js';
 
 import { OceanFFT } from './ocean/OceanFFT.js';
 import { WaterSurface } from './ocean/WaterSurface.js';
@@ -50,6 +54,7 @@ import { Spray } from './fx/Spray.js';
 import { SeaDetail } from './ocean/SeaDetail.js';
 import { MarineSnow } from './fx/MarineSnow.js';
 import { AirMotes } from './fx/AirMotes.js';
+import { Weather, WEATHER } from './weather/Weather.js';
 
 import { Underwater, LENS_REACH } from './post/Underwater.js';
 import { PostFX } from './post/PostFX.js';
@@ -57,6 +62,7 @@ import { AirHaze } from './post/AirHaze.js';
 import { FlyCamera } from './player/FlyCamera.js';
 import { Player } from './player/Player.js';
 import { Game } from './game/Game.js';
+import { Multiplayer } from './net/Multiplayer.js';
 import { STAND } from './game/FishStand.js';
 import { CHANDLERY } from './game/Chandlery.js';
 import { BoatController } from './player/BoatController.js';
@@ -65,8 +71,18 @@ import { WakeSim } from './ocean/WakeSim.js';
 import { Vegetation } from './world/Vegetation.js';
 import { SoundScape } from './audio/SoundScape.js';
 import { updateCameraVelocity, useStaticVelocity } from './post/CameraVelocity.js';
+import { t } from './i18n/index.js';
 
 const _up = new Vector3( 0, 1, 0 );
+
+// ?weather=storm etc: the weather to start in (the settings panel can change it)
+function weatherPreset( qs ) {
+
+	const w = ( qs.get( 'weather' ) || '' ).toLowerCase();
+	for ( const id in WEATHER ) if ( id.toLowerCase() === w ) return id;
+	return 'Clear';
+
+}
 
 export class App {
 
@@ -78,8 +94,15 @@ export class App {
 			timeSpeed: 0, // hours per real second
 			exposure: 0.55,
 			renderScale: 1, // internal resolution (the temporal upscaler reconstructs the output), Performance tab
+			// the tide (src/world/Tides.js): the sea level rides this, and everything water-aware
+			// follows. Its own clock (seconds), independent of the sun.
+			tideAmplitude: 0.65, // m: peak height above / below mean sea level
+			tidePeriod: TIDE_PERIOD, // s: one high + one low
+			tidePhase: 0, // 0..1: where in the cycle the tide starts
 		};
 		this.qs = new URLSearchParams( location.search );
+		// the tide singleton (src/world/Tides.js), for introspection (level / rate / stage)
+		this.tide = TIDE;
 
 	}
 
@@ -111,7 +134,7 @@ export class App {
 		this.fly.setPose( new Vector3( 20, 6, - 20 ), Math.PI * 0.9, - 0.12 );
 
 		// ---------------------------------------------------------------- sky
-		await progress( 0.04, 'Building the atmosphere…' );
+		await progress( 0.04, t( 'Building the atmosphere…' ) );
 		this.atmosphere = new Atmosphere( renderer );
 		this.sky = new Sky( this.atmosphere );
 		if ( ! qs.has( 'noClouds' ) ) {
@@ -133,26 +156,37 @@ export class App {
 		this.environment = new Environment( renderer, scene, this.sky );
 
 		// ---------------------------------------------------------------- island
-		await progress( 0.06, 'Shaping the island…' );
-		this.terrainData = new TerrainData();
+		await progress( 0.06, t( 'Shaping the island…' ) );
+		// a production build keeps the generated grids in IndexedDB: later visits skip generation
+		// (world/TerrainCache.js; ?noCache regenerates). The snapshot is taken before the village edits them.
+		const terrainSeed = WORLD.island.seed, terrainKey = qs.has( 'noCache' ) ? null : terrainCacheKey( terrainSeed );
+		this.terrainData = new TerrainData( terrainSeed, await loadTerrain( terrainKey ) );
+		if ( terrainKey && ! this.terrainData.fromCache ) saveTerrain( terrainKey, terrainSnapshot( this.terrainData ) );
+		// the other islands of the archipelago, out in the same sea (world/islands/; ?noIslands: none)
+		this.outerIslands = qs.has( 'noIslands' ) ? [] : OUTER_ISLANDS.map( ( d ) => new OuterIsland( d ) );
+		this.terrainData.outer = this.outerIslands;
 		this.colliders = new Colliders();
 		// the village flattens building pads into the heightmap: build it before any terrain
 		// data is derived (shore field, GPU textures, meshes)
-		await progress( 0.12, 'Building the village…' );
+		await progress( 0.12, t( 'Building the village…' ) );
 		this.village = new Village( { scene, terrain: this.terrainData, colliders: this.colliders } );
 		if ( ! qs.has( 'noVeg' ) ) {
 
-			await progress( 0.14, 'Planting the island…' );
+			await progress( 0.14, t( 'Planting the island…' ) );
 			this.vegetation = new Vegetation( { scene, terrain: this.terrainData, village: this.village } );
 			useStaticVelocity( this.vegetation.group );
 
 		}
 
-		await progress( 0.19, 'Rolling in the swell…' );
+		await progress( 0.19, t( 'Rolling in the swell…' ) );
 		this.shoreField = computeShoreField( this.terrainData, { res: 512, swellDir: [ WORLD.swellDir.x, WORLD.swellDir.y ] } );
 		this.terrainGPU = new TerrainGPU( this.terrainData, this.shoreField );
+		this.terrainGPU.setOuterShoreFields( this.outerIslands.map( ( o ) => computeShoreField( o.localView(), { res: 256, swellDir: [ WORLD.swellDir.x, WORLD.swellDir.y ] } ) ) );
 		// terrain and rocks apply the heightfield sun shadow (long hill shadows) in their own lighting
 		this.terrain = new Terrain( { scene, terrainData: this.terrainData, terrainGPU: this.terrainGPU, renderer } );
+		// a terrain mesh per outer island (the GPU terrain module reads their grids outside the home one)
+		this.outerTerrains = this.outerIslands.map( ( o ) => new Terrain( { scene, terrainData: o, terrainGPU: this.terrainGPU, renderer } ) );
+		for ( const ot of this.outerTerrains ) ot.mesh.material.appliesHillShadow = true;
 		this.rocks = new Rocks( { scene, terrain: this.terrain, village: this.village, colliders: this.colliders } );
 		// driftwood (CC0 photoscans), wrack, pebbles and village clutter
 		this.debris = new Debris( { scene, terrain: this.terrain, village: this.village, vegetation: this.vegetation, rocks: this.rocks, colliders: this.colliders } );
@@ -160,7 +194,7 @@ export class App {
 		this.terrain.mesh.material.appliesHillShadow = true;
 		this.rocks.material.appliesHillShadow = true;
 
-		await progress( 0.23, 'Growing the reef…' );
+		await progress( 0.23, t( 'Growing the reef…' ) );
 		this.reef = new Reef( { scene, terrain: this.terrainData, shoreField: this.shoreField } );
 
 		this.boat = new BoatModel();
@@ -169,7 +203,7 @@ export class App {
 		this.boat.group.rotation.y = WORLD.boatDock.heading;
 
 		// ---------------------------------------------------------------- ocean
-		await progress( 0.3, 'Simulating the ocean…' );
+		await progress( 0.3, t( 'Simulating the ocean…' ) );
 		this.fft = new OceanFFT( renderer );
 		if ( this.reef.setOcean ) this.reef.setOcean( this.fft ); // coral / sea fan sway follows the simulated swell
 		this.foamTexture = createFoamTexture( renderer );
@@ -201,6 +235,13 @@ fn terrainWetness( xz: vec2f, h: f32 ) -> vec2f {
 }`,
 			};
 			this.terrain.finalizeMaterial();
+			for ( const ot of this.outerTerrains ) {
+
+				ot.wetness = this.terrain.wetness;
+				ot.finalizeMaterial();
+
+			}
+
 			// surf-zone foam look (whitewater, lace) used by the water shader
 			this.surfFoam = new SurfFoam( { shoreSim: this.shoreSim } );
 			this.surface.foamShading = ( args ) => this.surfFoam.shading( args );
@@ -236,7 +277,7 @@ fn terrainWetness( xz: vec2f, h: f32 ) -> vec2f {
 		addBoatLights( this.localLights, this.boat );
 		// rough, large or heavily overdrawn surfaces (ground, rocks, debris, foliage) take the local
 		// lights as Lambert only; the village, pier and boat get the full BRDF (glints on wet wood, metal)
-		for ( const root of [ this.terrain.mesh, this.rocks.group, this.debris && this.debris.group, this.vegetation && this.vegetation.group ] ) if ( root ) root.traverse( ( o ) => {
+		for ( const root of [ this.terrain.mesh, ...this.outerTerrains.map( ( ot ) => ot.mesh ), this.rocks.group, this.debris && this.debris.group, this.vegetation && this.vegetation.group ] ) if ( root ) root.traverse( ( o ) => {
 
 			if ( o.material ) for ( const m of Array.isArray( o.material ) ? o.material : [ o.material ] ) m.localLightsCheap = true;
 
@@ -267,6 +308,7 @@ fn terrainWetness( xz: vec2f, h: f32 ) -> vec2f {
 		// nearly so: camera-only reprojection of the real world position is what the temporal resolve needs.
 		// ( the water material writes its own velocity + waterline mask outputs )
 		useStaticVelocity( this.terrain.mesh );
+		for ( const ot of this.outerTerrains ) useStaticVelocity( ot.mesh );
 		useStaticVelocity( this.rocks.group );
 		scene.add( this.ocean );
 
@@ -288,6 +330,14 @@ fn terrainWetness( xz: vec2f, h: f32 ) -> vec2f {
 		// dust, pollen, salt aerosol, seed fluff and gnats drifting around the camera
 		this.airMotes = new AirMotes( { terrain: this.terrainGPU, clouds: this.clouds, csm: this.csm, reversedDepth: true } );
 		scene.add( this.airMotes.mesh );
+		// weather: rain, wet surfaces and lightning. It installs the scene's `surface` hook, so it is
+		// built here (before the loading screen precompiles the pipelines) rather than on demand.
+		// ?weather=rain|storm|drizzle|clear picks the opening weather
+		this.weather = new Weather( {
+			scene, terrain: this.terrainGPU, fft: this.fft, clouds: this.clouds, preset: weatherPreset( qs ),
+			// keep the settings panel's cloud-cover slider in step with the weather
+			onClouds: ( v ) => { if ( this.ui ) { this.ui.s.clouds = v; this.ui.ui.refresh(); } },
+		} );
 		this.boatCtl = new BoatController( { model: this.boat, query: this.query, terrain: this.terrainData, colliders: this.colliders } );
 		this.boatSpray = new BoatSpray( { boat: this.boatCtl, spray: this.spray } );
 		// humpback cruising the deep water around the island (model fetched from public/models/whale)
@@ -317,7 +367,7 @@ fn terrainWetness( xz: vec2f, h: f32 ) -> vec2f {
 		this.freeCam = qs.has( 'fly' );
 
 		// ---------------------------------------------------------------- post
-		await progress( 0.34, 'Preparing the shaders…' );
+		await progress( 0.34, t( 'Preparing the shaders…' ) );
 		this.underwater = new Underwater( {
 			depthTexture: this.sceneRenderer.sceneRT.depthTexture, maskTexture: this.sceneRenderer.waterMaskTexture,
 			query: this.query, caustics: this.caustics, fft: this.fft,
@@ -334,11 +384,18 @@ fn terrainWetness( xz: vec2f, h: f32 ) -> vec2f {
 		G.exposure.value = this.settings.exposure;
 		if ( qs.has( 'scale' ) ) this.settings.renderScale = Number( qs.get( 'scale' ) ) || 1;
 		this.setRenderScale( this.settings.renderScale );
+		// tide overrides (mainly for the test harness: ?tideAmp=1.2&tidePeriod=300&tidePhase=0.25)
+		if ( qs.has( 'tideAmp' ) ) this.settings.tideAmplitude = Number( qs.get( 'tideAmp' ) );
+		if ( qs.has( 'tidePeriod' ) ) this.settings.tidePeriod = Number( qs.get( 'tidePeriod' ) );
+		if ( qs.has( 'tidePhase' ) ) this.settings.tidePhase = Number( qs.get( 'tidePhase' ) );
+		// seed the tide before the first frame so nothing reads a stale sea level at load
+		TIDE.update( G.time.value, this.settings.tideAmplitude, this.settings.tidePeriod, this.settings.tidePhase );
 
 		// ---------------------------------------------------------------- audio
 		// recorded field recordings (public/audio, credits in public/audio/CREDITS.md); ?noAudio turns it off
 		this.audio = qs.has( 'noAudio' ) ? null : new SoundScape();
 		this.player.audio = this.audio;
+		if ( this.weather ) this.weather.audio = this.audio; // rain bed + thunder
 		// the fishing game (rod, bites, catch, cooler, fish stand)
 		this.game = new Game( this );
 		// the lanterns at Joe's fish stand and Marta's chandlery (lit from dusk like the village lamps);
@@ -373,9 +430,9 @@ fn terrainWetness( xz: vec2f, h: f32 ) -> vec2f {
 		// ---- compile pipelines asynchronously (keeps the page responsive), then prime a few
 		// frames behind the loading screen so any remaining first-use stalls happen there
 		// stage weights: in the browser the pipeline compile below takes far longer than everything before it
-		await progress( 0.36, 'Compiling shaders…', 0.95 );
+		await progress( 0.36, t( 'Compiling shaders…' ), 0.95 );
 		await this.precompile();
-		await progress( 0.96, 'Warming up…' );
+		await progress( 0.96, t( 'Warming up…' ) );
 		for ( let i = 0; i < 2; i ++ ) {
 
 			this.frame( 1 / 60 );
@@ -605,6 +662,10 @@ fn terrainWetness( xz: vec2f, h: f32 ) -> vec2f {
 		G.time.value += dt;
 		if ( s.timeSpeed !== 0 ) s.timeOfDay = ( s.timeOfDay + dt * s.timeSpeed + 24 ) % 24;
 
+		// ---- tide: the single writer of frame.seaLevel, before anything reads the water this
+		// frame. The sea surface, the shore, the boat, the birds and the reef fish all ride it.
+		TIDE.update( G.time.value, s.tideAmplitude, s.tidePeriod, s.tidePhase );
+
 		// ---- player / boat (boat physics first so the cameras follow this frame's pose)
 		if ( this.input.hit( 'KeyF' ) ) this.setFreeCam( ! this.freeCam );
 		if ( this.input.hit( 'KeyT' ) ) this.toggleTime();
@@ -627,9 +688,15 @@ fn terrainWetness( xz: vec2f, h: f32 ) -> vec2f {
 		if ( this.freeCam ) this.fly.update( dt );
 		else this.player.update( dt );
 		this.game.update( dt );
+		// the shared sea (net/): set up with the HUD (its Online view lives in the inventory panel);
+		// before query.update, which reads the water under the other players' boats
+		if ( ! this.net && this.game.hud && ! this.qs.has( 'noNet' ) ) this.net = new Multiplayer( this );
+		if ( this.net ) this.net.update( dt );
 		this.updateSun();
 
 		this.atmosphere.update( dt, this.camera.position.y );
+		// after the atmosphere: the lightning is added to the sky irradiance it just wrote
+		if ( this.weather ) this.weather.update( dt, this.camera, this.cameraWaterHeight ?? 0 );
 		this.applyAtmosphereReadback();
 
 		// ---- water simulation
@@ -662,6 +729,7 @@ fn terrainWetness( xz: vec2f, h: f32 ) -> vec2f {
 		// ---- world
 		this.oceanLOD.update( this.camera );
 		this.terrain.update( this.camera );
+		for ( const ot of this.outerTerrains ) ot.update( this.camera );
 		this.rocks.update( this.camera );
 		this.debris.update( this.camera );
 		this.reef.update( dt, this.camera.position );
@@ -733,6 +801,7 @@ fn terrainWetness( xz: vec2f, h: f32 ) -> vec2f {
 			windSpeed: G.windSpeed.value,
 			windDir: G.windDir.value,
 			daylight: 1 - G.night.value,
+			rain: G.weather.value.x,
 			nearPier: Math.abs( p.x - WORLD.pier.x ) < 12 && p.z > WORLD.pier.zStart - 5 && p.z < WORLD.pier.zEnd + 8,
 			boat: {
 				active: this.boatCtl.driven, rpm: this.boatCtl.rpm, throttle: this.boatCtl.throttle, speed: this.boatCtl.velocity.length(),

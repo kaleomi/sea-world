@@ -1,3 +1,5 @@
+import { RHYTHM } from '../EcoRhythm.js';
+import { G } from '../../core/Globals.js';
 import { BirdBatch } from './BirdBatch.js';
 import { Birds } from './Birds.js';
 import { CritterBatch } from './CritterBatch.js';
@@ -35,7 +37,7 @@ class WaterHeights {
 	height( key, x, z ) {
 
 		const q = this.query;
-		if ( this.start < 0 ) return 0;
+		if ( this.start < 0 ) return G.seaLevel.value;
 		let k = this.keys.indexOf( key );
 		if ( k < 0 ) {
 
@@ -52,7 +54,7 @@ class WaterHeights {
 		q.setPoint( slot, x, z );
 		const h = q.cpu[ slot * 4 ];
 		// the result is valid once the point has been in the queue for a few frames
-		return q.cpuValid && this.frame - this.since[ k ] > 4 && Number.isFinite( h ) ? h : 0;
+		return q.cpuValid && this.frame - this.since[ k ] > 4 && Number.isFinite( h ) ? h : G.seaLevel.value;
 
 	}
 
@@ -153,12 +155,14 @@ export class Wildlife {
 		this.birdBatch.begin();
 		this.critterBatch.begin();
 		this.blobs.begin();
+		// one reading of the hour and the weather, shared by every animal below
+		const eco = RHYTHM.sample();
 		if ( this.test ) this.test( this.birdBatch, dt, this.critterBatch, this.blobs );
 		else {
 
-			this.birds.update( dt, viewer, this.birdBatch, camera );
-			this.shorebirds.update( dt, viewer, this.birdBatch, camera, this.blobs );
-			this.crabs.update( dt, viewer, this.critterBatch, camera, this.blobs );
+			this.birds.update( dt, viewer, this.birdBatch, camera, eco );
+			this.shorebirds.update( dt, viewer, this.birdBatch, camera, this.blobs, eco );
+			this.crabs.update( dt, viewer, this.critterBatch, camera, this.blobs, eco );
 
 		}
 

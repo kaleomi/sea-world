@@ -1,8 +1,15 @@
 import { Vector2, Vector3, PlaneGeometry, InstancedBufferGeometry, Mesh } from '../engine/index.js';
 import { UniformBlock, ShaderModule, Material } from '../engine/webgpu.js';
 import { LAYERS } from '../core/SceneRenderer.js';
+import { G } from '../core/Globals.js';
+import { RHYTHM } from '../world/EcoRhythm.js';
 
 // Suspended particles in the water around the camera (marine snow, plankton, sand grains).
+//
+// After dark a share of them are plankton that make their own light (EcoRhythm `glow`: it needs
+// the sun well down, and a downpour washes it out). They only show it when the water is stirred,
+// which in practice means the diver pushing through them: the specks flash brightest right in
+// front of the lens and along your wake, and breathe faintly otherwise.
 // Positions are procedural (hash of the instance) inside a box that wraps around the camera, so
 // there is no simulation and no CPU work. The particles drift with a slow current and sway back
 // and forth with the orbital motion of the passing swell (longest FFT cascades, decaying with
@@ -73,8 +80,10 @@ fn snowSpotProfile( cd: f32, cosInner: f32, cosOuter: f32 ) -> f32 {
 				camPos: [ 'vec3f', new Vector3() ],
 				snowOpacity: [ 'f32', 1 ],
 				box: [ 'f32', box ],
+				snowBio: [ 'f32', 0 ], // how dark it is (EcoRhythm glow): 0 by day
+				snowChurn: [ 'f32', 0 ], // how hard the diver is stirring the water through
 			},
-			varyings: { vFade: 'f32', vDepth: 'f32', vTorch: 'vec3f' },
+			varyings: { vFade: 'f32', vDepth: 'f32', vTorch: 'vec3f', vBio: 'vec2f' },
 			vertex: /* wgsl */`
 	let id = f32( v.instance );
 	let h = snowHash3( id * 0.7131 );
@@ -109,6 +118,13 @@ ${ query && query.module ? '\tfade *= smoothstep( 0.0, 0.04, waterQueryHeightAtX
 	let tspot = snowSpotProfile( dot( tv / tr, snowFlash.dir ), snowFlash.cone.x, snowFlash.cone.y );
 	let sigT = frame.waterAbsorption + frame.waterScattering;
 	o.vTorch = snowFlash.col * exp( - sigT * tr ) * ( tspot / ( tr2 + 0.15 ) * snowFlash.on * 0.35 );
+	// bioluminescence: a quarter of the specks are plankton; they light up where the water is
+	// disturbed (right where the diver is pushing through) and breathe faintly otherwise
+	let isBio = select( 0.0, 1.0, h2.z > 0.76 );
+	let near = smoothstep( 1.7, 0.35, dist );
+	let stir = clamp( near * ( 0.30 + 0.70 * mat.snowChurn ), 0.0, 1.0 );
+	let breathe = 0.5 + 0.5 * sin( frame.time * 1.6 + h.x * 6.2831 );
+	o.vBio = vec2f( isBio, stir * ( 0.25 + 0.75 * breathe ) );
 	// nearly still in the world: camera-only motion vectors (no previous position)
 	v.useWorld = true;
 	v.worldPos = p + right * q.x + up * q.y;
@@ -120,7 +136,10 @@ ${ query && query.module ? '\tfade *= smoothstep( 0.0, 0.04, waterQueryHeightAtX
 	// lit by the light that reaches this depth, slightly greenish-white (organic matter)
 	let sigT = frame.waterAbsorption + frame.waterScattering;
 	let light = ( frame.sunColor * 0.1 + frame.skyIrradiance * 1.2 ) * exp( - sigT * in.vs.vDepth );
-	s.albedo = ( light + in.vs.vTorch ) * vec3f( 0.9, 1.0, 0.95 ) * mix( 1.3, 0.8, r ) * mat.snowOpacity;
+	// ...and after dark, the plankton's own cold blue-green light, which needs no lamp at all
+	let bio = in.vs.vBio.x * in.vs.vBio.y * mat.snowBio;
+	s.albedo = ( light + in.vs.vTorch ) * vec3f( 0.9, 1.0, 0.95 ) * mix( 1.3, 0.8, r ) * mat.snowOpacity
+		+ bio * vec3f( 0.16, 0.85, 1.0 ) * ( 1.7 - r * 0.7 ) * mat.snowOpacity;
 	s.emissive = vec3f( 0.0 );
 	s.alpha = 1.0;
 `,
@@ -133,6 +152,8 @@ fn snowHash3( n: f32 ) -> vec3f { return fract( sin( vec3f( n, n + 17.13, n + 43
 		this.material = mat;
 		this.camPos = mat.uniforms.camPos;
 		this.opacity = mat.uniforms.snowOpacity;
+		this.bio = mat.uniforms.snowBio;
+		this.churn = mat.uniforms.snowChurn;
 
 		this.mesh = new Mesh( inst, mat );
 		this.mesh.frustumCulled = false;
@@ -157,10 +178,32 @@ fn snowHash3( n: f32 ) -> vec3f { return fract( sin( vec3f( n, n + 17.13, n + 43
 
 	}
 
-	update( camera, underwater ) {
+	update( camera, underwater, dt = G.dt.value ) {
 
 		this.mesh.visible = underwater;
-		if ( underwater ) this.camPos.value.copy( camera.position );
+		if ( ! underwater ) {
+
+			this._submerged = false;
+			this.churn.value = 0;
+			this.bio.value = 0;
+			return;
+
+		}
+		const p = camera.position;
+		this.camPos.value.copy( p );
+		this.bio.value = RHYTHM.sample().glow;
+		const last = this._last || ( this._last = p.clone() );
+		// Crossing back into the sea must not count travel on land as swimming.
+		if ( ! this._submerged ) { last.copy( p ); this._submerged = true; }
+		// Speed, not distance per frame: consistent flashes at 30/60/120 fps. A pause or teleport
+		// must not leave stale excitation; normal swimming approaches full strength at 6 m/s.
+		const seconds = Number.isFinite( dt ) && dt > 0 ? Math.min( dt, 0.1 ) : 0;
+		const distance = last.distanceTo( p );
+		const move = seconds > 0 && distance < this.box * 0.5 ? Math.min( 1, distance / ( seconds * 6 ) ) : 0;
+		last.copy( p );
+		const c = this.churn.value;
+		const response = move > c ? 0.06 : 0.65;
+		this.churn.value = c + ( move - c ) * ( 1 - Math.exp( - seconds / response ) );
 
 	}
 

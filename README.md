@@ -27,9 +27,23 @@ breach. It runs directly on WebGPU and WGSL with its own small rendering engine,
   18 Caribbean species.
 - A line-tension fight: keep the tension in the green band, ease off when the fish runs.
 - A full-screen catch card with the fish's length and weight, a fish log with records, and a cooler.
+- Joe's orders: bring him a number of one species above a set weight for more than the stand pays.
+  Filling orders earns reputation, which unlocks reef, deep-water and trophy orders and a better price
+  for everything you sell.
+- The fish log is a collection: a bronze, silver or gold medal per species by the biggest one landed,
+  hints on where and when to find the ones you haven't caught, and cash bonuses for 5, 10, 15 and all
+  18 species and for 3, 9 and 18 gold medals.
+- Five legendary fish, named giants that only feed in their own conditions (rain on the reef, a high
+  tide at night under the pier, first light over deep water off Ember Island, Coral Atoll's reef after
+  dark, a thunderstorm).
+  They are rare bites that need upgraded line, pay a bounty and go on the fish log's trophy wall.
+- Fishing tournaments at Joe's stand: pay the fee, then five minutes against three local rivals for
+  the heaviest fish, the heaviest bag or the heaviest of one species. The top three share the purse;
+  a win moves you up from the Harbour Cup to the Island Derby and the Tidewater Open.
 - Joe's fish stand buys your catch; Marta's chandlery sells line, reels, rods, a bigger hold, fuel, a rebuilt
   engine, a fish finder and deck floodlights for night fishing.
-- Walk the deck and the wheelhouse while the boat drifts; the boat burns fuel.
+- Walk the deck and the wheelhouse while the boat drifts; the boat burns fuel. Step off away from the
+  dock (onto another island's beach, or for a swim) and the anchor goes down where it reaches bottom.
 - A first-play guide, contextual tips and a minimap. Progress is saved in the browser.
 
 **Ocean**
@@ -49,6 +63,11 @@ breach. It runs directly on WebGPU and WGSL with its own small rendering engine,
 
 **World**
 - An island with a beach, hills, headlands and rocks.
+- More islands out in the same sea, reached by boat with no loading: Coral Atoll (a ring of reef and
+  sandy islets round a lagoon, south-east) and Ember Island (a volcano with a crater and a beach ring,
+  west), with their own palm groves, forest and scrub. Each is plain data in `src/world/islands/`
+  generated from a terrain recipe, with its own fish
+  and legends; tuna and mahi roam the open sea between them. The minimap shows the way and the distance.
 - A fishing village, a pier, and the vendors' stalls built from Poly Haven scans.
 - Realistic vendor characters (Microsoft Rocketbox) with skinned animation.
 - A coral reef with fish.
@@ -120,6 +139,9 @@ Add these to the URL, for example `?fly&noAudio`:
 | `noCaustics` | Skip caustics |
 | `noVeg` | Skip vegetation |
 | `noSim` | Skip the swash (shallow-water) simulation |
+| `noCache` | Regenerate the terrain instead of reading it from the browser cache |
+| `server=ws://host:5191` | Join that shared sea on load (see Multiplayer) |
+| `noNet` | Leave multiplayer out |
 
 ## Running locally
 
@@ -130,6 +152,29 @@ npm run build    # static build in dist/
 ```
 
 Every push to `main` deploys to GitHub Pages through `.github/workflows/deploy.yml`.
+
+## Multiplayer (shared sea)
+
+Several players can sail the same sea: you see the others' boats and figures with their names over
+them and dots on the minimap, and hear when they land a big fish or a legend. Each game still keeps
+its own save, money and fish; the server only relays where everyone is and what they catch.
+
+```sh
+npm run server   # installs the server's one dependency (ws) the first time, then listens on 127.0.0.1:5191
+```
+
+In the game open the cooler (I), press **Online**, pick a name and colour and **Connect**. Two
+browser tabs on the same computer are enough to try it.
+
+Other machines need more than the address: browsers only run WebGPU on `localhost` or on an
+`https://` page, and an https page may only open a secure `wss://` socket. So to play with friends
+elsewhere, the game and the server go behind https on a public host (the server takes `HOST` and
+`PORT` from the environment, e.g. `HOST=0.0.0.0` behind a TLS proxy). `GET /` on the server answers
+`{ ok, players }` for health checks.
+
+`render.yaml` describes the server as a [Render](https://render.com) web service (Render serves it
+over `wss://` on its own https address). Once it runs, put that address in `.env.production` as
+`VITE_NET_SERVER=wss://<your-service>.onrender.com` so the published game offers it by default.
 
 ## Project layout
 
@@ -143,6 +188,8 @@ Every push to `main` deploys to GitHub Pages through `.github/workflows/deploy.y
 | `src/post/` | Post chain: AO, underwater composite, haze, TAAU, motion blur, bloom, lens flare, droplets |
 | `src/materials/` | Shared lighting: shadow filtering, bounce light, contact shadows, local lights, LOD fades |
 | `src/player/` | Walking, swimming, the boat and the free camera |
+| `src/net/` | Multiplayer in the game: wire format, the link to the server, drawing the other players |
+| `server/` | The multiplayer relay (Node + `ws`): `npm run server` |
 | `src/audio/` | The sample-based soundscape |
 | `src/ui/` | Settings panel, loading screen and HUD |
 | `tools/` | Scripts that fetch and convert the characters, stall props and fishing sounds |

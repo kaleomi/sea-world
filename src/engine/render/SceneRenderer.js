@@ -88,6 +88,15 @@ export class SceneRenderer {
 
 	}
 
+	removeHullMask( mesh ) {
+
+		const i = this.hullMasks.findIndex( ( h ) => h.mesh === mesh );
+		if ( i < 0 ) return;
+		this.hullMasks.splice( i, 1 );
+		this.hullMaskScene.remove( mesh );
+
+	}
+
 	_renderHullMasks( camera ) {
 
 		let active = 0;
@@ -98,7 +107,7 @@ export class SceneRenderer {
 			h.mesh.matrix.copy( h.object.matrixWorld );
 			h.mesh.matrixWorld.copy( h.object.matrixWorld );
 			_local.setFromMatrixPosition( camera.matrixWorld ).applyMatrix4( _inv.copy( h.object.matrixWorld ).invert() );
-			const on = ! h.box.containsPoint( _local ) && _frustum.intersectsSphere( _sphere.copy( h.sphere ).applyMatrix4( h.object.matrixWorld ) );
+			const on = h.object.visible && ! h.box.containsPoint( _local ) && _frustum.intersectsSphere( _sphere.copy( h.sphere ).applyMatrix4( h.object.matrixWorld ) );
 			h.mesh.visible = on;
 			if ( on ) active ++;
 

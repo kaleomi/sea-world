@@ -130,7 +130,8 @@ export class Vendor {
 
 // Stand-in figure (~1.72 m, facing local +Z): a weathered islander in a hat, apron and boots.
 // look: { shirt, trousers, apron, hat, hair, skin, beard } colours to tell the traders apart.
-function buildFigure( look = {} ) {
+// (Also the other players' figures in multiplayer: net/RemotePlayers.js.)
+export function buildFigure( look = {} ) {
 
 	const P = [];
 	const add = ( g, o ) => P.push( prepare( g, o ) );

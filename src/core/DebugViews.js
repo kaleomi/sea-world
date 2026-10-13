@@ -35,6 +35,10 @@ export const VIEWS = {
 	tStacks: { p: [ - 240, 8, 300 ], yaw: 0.15, pitch: - 0.05, time: 16.5 },
 	tCove: { p: [ - 160, 2.2, - 30 ], yaw: 1.35, pitch: - 0.08, time: 10.5 },
 	tMorning: { p: [ 18, 3.0, - 60 ], yaw: 0.2, pitch: 0.05, time: 7.2 },
+	// the outer islands (world/islands/): over Coral Atoll and Ember Island, and Coral Atoll seen from home
+	isleCoral: { p: [ 2400, 160, 2330 ], yaw: 0, pitch: - 0.32, time: 11.0 },
+	isleEmber: { p: [ - 2600, 90, 1800 ], yaw: 0, pitch: - 0.08, time: 15.0 },
+	isleFromHome: { p: [ 300, 25, 420 ], yaw: - 2.09, pitch: - 0.01, time: 10.0 },
 };
 
 export function installDebugViews( app ) {

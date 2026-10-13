@@ -33,7 +33,15 @@ import { detailBinding } from './terrain/TerrainShading.js';
 //                                                       terrainSplatLevel( xz, level )
 //   terrainShoreSample( xz: vec2f ) -> vec4f            shore field (T, dirX, dirZ, exposure), bilinear
 //   terrainSunShadowAt( P: vec3f ) -> f32               heightfield sun shadow: 0 in the hills' shadow .. 1 lit
-// Bindings: terrainParams (TerrainParams: origin, size, res, shoreRes, sunBake, sunBaked), terrainHeightTex,
+//                                                       (home island only; the outer islands are lit)
+//   terrainOuterIndex( xz: vec2f ) -> i32               which outer island's grid holds xz (-1: none)
+//
+// The outer islands (OuterIsland, `terrain.outer`): the same maps for each, as layers of 2d-array
+// textures (terrainOuterHeightTex, terrainOuterNormalTex, terrainOuterSplatTex, terrainOuterShoreTex)
+// with their world rects in terrainOuterRects (x0, z0, size, res per texel). Outside the home grid
+// terrainHeightAt, terrainNormalRock*, terrainNormalAt, terrainSplat* and terrainShoreSample read
+// the outer island there, so every shader that asks for the ground sees the whole archipelago.
+// Bindings: terrainParams (TerrainParams: origin, size, res, shoreRes, sunBake, sunBaked, outerCount, outerShoreRes), terrainHeightTex,
 // terrainNormalTex, terrainSplatTex, terrainDetailTex (tileable: sample with smpLinearRepeat / smpAnisoRepeat),
 // terrainShoreTex, terrainSunShadowTex.
 const SUN_N = 512;
@@ -80,6 +88,7 @@ export class TerrainGPU {
 		this.size = terrain.size;
 		this.origin = terrain.origin;
 		this.res = res;
+		this._initOuter( terrain.outer || [] );
 
 		this.uniforms = new UniformBlock( 'TerrainParams', {
 			origin: [ 'f32', terrain.origin ],
@@ -88,6 +97,8 @@ export class TerrainGPU {
 			shoreRes: [ 'f32', 1 ],
 			sunBake: [ 'vec3f', new Vector3( 0, 1, 0 ) ],
 			sunBaked: [ 'f32', 0 ], // 0 until the first bake: everything lit
+			outerCount: [ 'f32', this.outerCount ],
+			outerShoreRes: [ 'f32', this.outerShoreRes ],
 		}, { label: 'terrainParams' } );
 		// three-style handles (terOrigin / terSize / terSunBake / terSunBaked)
 		this.uOrigin = this.uniforms.fields.origin;
@@ -109,6 +120,11 @@ export class TerrainGPU {
 				terrainDetailTex: detailBinding(),
 				terrainShoreTex: { texture: () => this.shoreTexture, sampleType: 'unfilterable-float' },
 				terrainSunShadowTex: { texture: this.sunShadowTexture },
+				terrainOuterRects: { texture: this.outerRects, sampleType: 'unfilterable-float' },
+				terrainOuterHeightTex: { texture: this.outerHeightTexture, sampleType: 'unfilterable-float', viewDimension: '2d-array' },
+				terrainOuterNormalTex: { texture: this.outerNormalTexture, viewDimension: '2d-array' },
+				terrainOuterSplatTex: { texture: this.outerSplatTexture, viewDimension: '2d-array' },
+				terrainOuterShoreTex: { texture: () => this.outerShoreTexture, sampleType: 'unfilterable-float', viewDimension: '2d-array' },
 			},
 			code: TERRAIN_WGSL,
 		} );
@@ -122,6 +138,70 @@ export class TerrainGPU {
 		} );
 
 		this.timings = { ...maps.ms, detail: this.detailTexture.userData.ms, total: performance.now() - t0 };
+
+	}
+
+	// ------------------------------------------------------------ outer islands
+
+	// one layer per outer island (all the same res); a 1-layer placeholder when there are none
+	_initOuter( outer ) {
+
+		const L = Math.max( 1, outer.length );
+		const res = outer.length ? outer[ 0 ].res : 1;
+		for ( const o of outer ) if ( o.res !== res ) throw new Error( 'outer islands need one res' );
+		const arr = ( format, label, Ctor, comps, mips ) => {
+
+			const t = new Texture( { label, width: res, height: res, depth: L, dimension: '2d-array', format, mips, usage: mips ? [ 'sample', 'copyDst', 'render' ] : [ 'sample', 'copyDst' ] } );
+			t.getGPU();
+			if ( ! outer.length ) t.upload( new Ctor( comps ) );
+			return t;
+
+		};
+
+		this.outer = outer;
+		this.outerCount = outer.length;
+		this.outerHeightTexture = arr( 'r32float', 'terrainOuterHeights', Float32Array, 1, false );
+		this.outerNormalTexture = arr( 'rgba8unorm', 'terrainOuterNormalRockAO', Uint8Array, 4, outer.length ? true : false );
+		this.outerSplatTexture = arr( 'rgba8unorm', 'terrainOuterSplat', Uint8Array, 4, outer.length ? true : false );
+		const rects = new Float32Array( 4 * L );
+		outer.forEach( ( o, i ) => {
+
+			this.outerHeightTexture.upload( o.heights, { layer: i, layers: 1 } );
+			const maps = bakeTerrainMaps( o );
+			this.outerNormalTexture.upload( maps.normal, { layer: i, layers: 1 } );
+			this.outerSplatTexture.upload( maps.splat, { layer: i, layers: 1 } );
+			rects.set( [ o.x0, o.z0, o.size, o.res ], 4 * i );
+
+		} );
+		if ( outer.length ) {
+
+			generateMipmaps( this.outerNormalTexture );
+			generateMipmaps( this.outerSplatTexture );
+
+		}
+
+		this.outerRects = dataTexture( rects, L, 1, 'rgba32float', 'terrainOuterRects' );
+		// shore fields: set by setOuterShoreFields (placeholder: no waves)
+		this.outerShoreRes = 1;
+		this.outerShoreTexture = new Texture( { label: 'terrainOuterShoreField', width: 1, height: 1, depth: L, dimension: '2d-array', format: 'rgba32float', usage: [ 'sample', 'copyDst' ] } );
+		this.outerShoreTexture.getGPU();
+		const ph = new Float32Array( 4 * L );
+		for ( let i = 0; i < L; i ++ ) ph[ 4 * i ] = 1e4;
+		this.outerShoreTexture.upload( ph );
+
+	}
+
+	// the outer islands' shore fields (computeShoreField over each island's local view), one per island
+	setOuterShoreFields( fields ) {
+
+		if ( ! fields.length ) return;
+		const res = fields[ 0 ].res;
+		this.outerShoreTexture.destroy();
+		this.outerShoreTexture = new Texture( { label: 'terrainOuterShoreField', width: res, height: res, depth: fields.length, dimension: '2d-array', format: 'rgba32float', usage: [ 'sample', 'copyDst' ] } );
+		this.outerShoreTexture.getGPU();
+		fields.forEach( ( f, i ) => this.outerShoreTexture.upload( f.data, { layer: i, layers: 1 } ) );
+		this.outerShoreRes = res;
+		this.uniforms.fields.outerShoreRes.value = res;
 
 	}
 
@@ -222,6 +302,41 @@ fn terrainUvOf( xz: vec2f ) -> vec2f {
 	return ( xz - terrainParams.origin ) / terrainParams.size;
 }
 
+// ---- outer islands: which grid holds xz, and its uv there
+fn terrainOuterIndex( xz: vec2f ) -> i32 {
+	var idx = -1;
+	let n = i32( terrainParams.outerCount );
+	for ( var k = 0; k < n; k++ ) {
+		let r = textureLoad( terrainOuterRects, vec2i( k, 0 ), 0 );
+		let f = ( xz - r.xy ) / r.z;
+		if ( f.x >= 0.0 && f.y >= 0.0 && f.x < 1.0 && f.y < 1.0 ) { idx = k; }
+	}
+	return idx;
+}
+fn terrainOuterUv( xz: vec2f, idx: i32 ) -> vec2f {
+	let r = textureLoad( terrainOuterRects, vec2i( max( idx, 0 ), 0 ), 0 );
+	return ( xz - r.xy ) / r.z;
+}
+fn terrainInHome( xz: vec2f ) -> bool {
+	let uv = terrainUvOf( xz );
+	return uv.x >= 0.0 && uv.y >= 0.0 && uv.x <= 1.0 && uv.y <= 1.0;
+}
+// exact bilinear height on outer island idx (-90 outside its grid)
+fn terrainOuterHeightAt( xz: vec2f, idx: i32 ) -> f32 {
+	let res = f32( textureDimensions( terrainOuterHeightTex ).x );
+	let f = terrainOuterUv( xz, idx ) * res - 0.5;
+	let fc = clamp( f, vec2f( 0.0 ), vec2f( res - 1.001 ) );
+	let ii = vec2i( floor( fc ) );
+	let t = fract( fc );
+	let a = textureLoad( terrainOuterHeightTex, ii, idx, 0 ).x;
+	let b = textureLoad( terrainOuterHeightTex, ii + vec2i( 1, 0 ), idx, 0 ).x;
+	let c = textureLoad( terrainOuterHeightTex, ii + vec2i( 0, 1 ), idx, 0 ).x;
+	let d = textureLoad( terrainOuterHeightTex, ii + vec2i( 1, 1 ), idx, 0 ).x;
+	let h = mix( mix( a, b, t.x ), mix( c, d, t.x ), t.y );
+	let outside = f.x < 0.0 || f.y < 0.0 || f.x > res - 1.0 || f.y > res - 1.0;
+	return select( h, -90.0, outside );
+}
+
 // exact bilinear height at world xz (matches TerrainData.heightAt)
 fn terrainHeightAt( xz: vec2f ) -> f32 {
 	let res = terrainParams.res;
@@ -235,19 +350,30 @@ fn terrainHeightAt( xz: vec2f ) -> f32 {
 	let c = textureLoad( terrainHeightTex, ii + vec2i( 0, 1 ), 0 ).x;
 	let d = textureLoad( terrainHeightTex, ii + vec2i( 1, 1 ), 0 ).x;
 	let h = mix( mix( a, b, t.x ), mix( c, d, t.x ), t.y );
-	// outside the domain: deep ocean floor
+	// outside the domain: an outer island there, else the deep ocean floor
 	let outside = f.x < 0.0 || f.y < 0.0 || f.x > res - 1.0 || f.y > res - 1.0;
-	return select( h, -90.0, outside );
+	if ( !outside ) { return h; }
+	let oi = terrainOuterIndex( xz );
+	if ( oi < 0 ) { return -90.0; }
+	return terrainOuterHeightAt( xz, oi );
 }
 
-// filtered normal (xz components), rock mask, ambient occlusion
+// filtered normal (xz components), rock mask, ambient occlusion. Both grids are always sampled and
+// the right one selected, so the implicit-derivative sample stays in uniform control flow.
 fn terrainNormalRock( xz: vec2f ) -> vec4f {
-	let s = textureSample( terrainNormalTex, smpLinearClamp, terrainUvOf( xz ) );
+	let home = textureSample( terrainNormalTex, smpLinearClamp, terrainUvOf( xz ) );
+	let oi = terrainOuterIndex( xz );
+	let o = textureSample( terrainOuterNormalTex, smpLinearClamp, terrainOuterUv( xz, oi ), max( oi, 0 ) );
+	let s = select( home, o, oi >= 0 && !terrainInHome( xz ) );
 	return vec4f( s.xy * 2.0 - 1.0, s.z, s.w );
 }
 // explicit mip (e.g. in the vertex stage)
 fn terrainNormalRockLevel( xz: vec2f, level: f32 ) -> vec4f {
-	let s = textureSampleLevel( terrainNormalTex, smpLinearClamp, terrainUvOf( xz ), level );
+	var s = textureSampleLevel( terrainNormalTex, smpLinearClamp, terrainUvOf( xz ), level );
+	if ( !terrainInHome( xz ) ) {
+		let oi = terrainOuterIndex( xz );
+		if ( oi >= 0 ) { s = textureSampleLevel( terrainOuterNormalTex, smpLinearClamp, terrainOuterUv( xz, oi ), oi, level ); }
+	}
 	return vec4f( s.xy * 2.0 - 1.0, s.z, s.w );
 }
 fn terrainNormalAt( xz: vec2f ) -> vec3f {
@@ -258,14 +384,26 @@ fn terrainNormalAt( xz: vec2f ) -> vec3f {
 // loose sand, worn ground / paths, gullies (land) or seagrass (seabed), seabed rubble (the
 // eroded beach scarp face on land)
 fn terrainSplat( xz: vec2f ) -> vec4f {
-	return textureSample( terrainSplatTex, smpLinearClamp, terrainUvOf( xz ) );
+	let home = textureSample( terrainSplatTex, smpLinearClamp, terrainUvOf( xz ) );
+	let oi = terrainOuterIndex( xz );
+	let o = textureSample( terrainOuterSplatTex, smpLinearClamp, terrainOuterUv( xz, oi ), max( oi, 0 ) );
+	return select( home, o, oi >= 0 && !terrainInHome( xz ) );
 }
 fn terrainSplatLevel( xz: vec2f, level: f32 ) -> vec4f {
-	return textureSampleLevel( terrainSplatTex, smpLinearClamp, terrainUvOf( xz ), level );
+	var s = textureSampleLevel( terrainSplatTex, smpLinearClamp, terrainUvOf( xz ), level );
+	if ( !terrainInHome( xz ) ) {
+		let oi = terrainOuterIndex( xz );
+		if ( oi >= 0 ) { s = textureSampleLevel( terrainOuterSplatTex, smpLinearClamp, terrainOuterUv( xz, oi ), oi, level ); }
+	}
+	return s;
 }
 
 // shore field: (T, dirX, dirZ, exposure), bilinear via loads (float32 data)
 fn terrainShoreSample( xz: vec2f ) -> vec4f {
+	if ( !terrainInHome( xz ) ) {
+		let oi = terrainOuterIndex( xz );
+		if ( oi >= 0 ) { return terrainOuterShoreSample( xz, oi ); }
+	}
 	let res = terrainParams.shoreRes;
 	let f = ( xz - terrainParams.origin ) / terrainParams.size * res - 0.5;
 	let fc = clamp( f, vec2f( 0.0 ), vec2f( max( res - 1.001, 0.0 ) ) );
@@ -277,6 +415,21 @@ fn terrainShoreSample( xz: vec2f ) -> vec4f {
 	let b = textureLoad( terrainShoreTex, min( ii + vec2i( 1, 0 ), mx ), 0 );
 	let c = textureLoad( terrainShoreTex, min( ii + vec2i( 0, 1 ), mx ), 0 );
 	let d = textureLoad( terrainShoreTex, min( ii + vec2i( 1, 1 ), mx ), 0 );
+	return mix( mix( a, b, t.x ), mix( c, d, t.x ), t.y );
+}
+
+fn terrainOuterShoreSample( xz: vec2f, idx: i32 ) -> vec4f {
+	let res = terrainParams.outerShoreRes;
+	let f = terrainOuterUv( xz, idx ) * res - 0.5;
+	let fc = clamp( f, vec2f( 0.0 ), vec2f( max( res - 1.001, 0.0 ) ) );
+	let i = floor( fc );
+	let t = fract( fc );
+	let ii = vec2i( i );
+	let mx = vec2i( max( i32( res ) - 1, 0 ) );
+	let a = textureLoad( terrainOuterShoreTex, ii, idx, 0 );
+	let b = textureLoad( terrainOuterShoreTex, min( ii + vec2i( 1, 0 ), mx ), idx, 0 );
+	let c = textureLoad( terrainOuterShoreTex, min( ii + vec2i( 0, 1 ), mx ), idx, 0 );
+	let d = textureLoad( terrainOuterShoreTex, min( ii + vec2i( 1, 1 ), mx ), idx, 0 );
 	return mix( mix( a, b, t.x ), mix( c, d, t.x ), t.y );
 }
 

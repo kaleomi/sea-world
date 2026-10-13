@@ -1,9 +1,11 @@
 import * as THREE from '../engine/index.js';
 import { WORLD } from '../world/WorldLayout.js';
+import { G } from '../core/Globals.js';
 
 const RHO = 1025; // sea water density
 const GRAV = 9.81;
 const DEG = Math.PI / 180;
+const WORLD_UP = new THREE.Vector3( 0, 1, 0 );
 
 const sstep = THREE.MathUtils.smoothstep;
 const clamp = THREE.MathUtils.clamp;
@@ -75,9 +77,15 @@ export class BoatController {
 			p: new THREE.Vector3( s.position.x * sx, s.position.y, cbz + ( s.position.z - cbz ) * sz ),
 			area: s.area, bottom: s.bottomY ?? s.position.y,
 		} ) );
-		let pitchK = 0;
-		for ( const s of this.samples ) pitchK += s.area * ( s.p.z - cbz ) ** 2;
+		let pitchK = 0, rollK = 0;
+		for ( const s of this.samples ) { pitchK += s.area * ( s.p.z - cbz ) ** 2; rollK += s.area * s.p.x ** 2; }
 		this.pitchStiffness = RHO * GRAV * pitchK; // N m / rad (for the running-trim moment)
+		this.rollStiffness = RHO * GRAV * rollK; // N m / rad (roll axis of the effective waterplane)
+		// capsize guard: past this heel the keel righting moment joins the hull's own buoyancy, and
+		// at the limit the hull is held over — a big sea can lay the boat right over but never roll
+		// it past the limit, so it can't end up inverted.
+		this.guardFrom = 45 * DEG;
+		this.capsizeAt = 70 * DEG;
 		this.slot = query.allocate( 'boatHull', this.samples.length );
 
 		// lateral stations along the keel: (z, lateral area m^2) for hull lift and cross-flow drag
@@ -89,6 +97,7 @@ export class BoatController {
 
 		// state (position = model origin at the design waterline)
 		this.position = new THREE.Vector3().copy( WORLD.boatDock.position );
+		this.position.y = G.seaLevel.value;
 		this.quaternion = new THREE.Quaternion().setFromAxisAngle( new THREE.Vector3( 0, 1, 0 ), WORLD.boatDock.heading );
 		this.velocity = new THREE.Vector3();
 		this.angular = new THREE.Vector3();
@@ -101,6 +110,7 @@ export class BoatController {
 		this.reverseFactor = 0.45; // astern thrust relative to ahead
 		this.driven = false;
 		this.moored = true;
+		this.anchored = false; // moored to its own anchor away from the dock (Player.exitBoat)
 		this.mooring = { anchor: WORLD.boatDock.position.clone(), heading: WORLD.boatDock.heading };
 
 		const n = this.samples.length;
@@ -187,7 +197,7 @@ export class BoatController {
 			const k = ( this.slot + i ) * 4;
 			// never let a bad GPU sample into the integrator (keep the last good value)
 			let h = c[ k ];
-			if ( ! Number.isFinite( h ) ) h = this.hasWater ? this.waterH[ i ] : 0;
+			if ( ! Number.isFinite( h ) ) h = this.hasWater ? this.waterH[ i ] : G.seaLevel.value;
 			const nx = Number.isFinite( c[ k + 1 ] ) ? c[ k + 1 ] : 0, nz = Number.isFinite( c[ k + 2 ] ) ? c[ k + 2 ] : 0;
 			const ny = Math.sqrt( Math.max( 1 - nx * nx - nz * nz, 0.05 ) );
 			const gx = - nx / ny, gz = - nz / ny; // surface slope dh/dx, dh/dz
@@ -385,6 +395,28 @@ export class BoatController {
 		_v.set( - aLoc.x * 25000, - aLoc.y * 2000, - aLoc.z * ( 4500 + 900 * au ) ).multiplyScalar( wd ).applyQuaternion( this.quaternion );
 		T.add( _v );
 
+		// ---- capsize guard: a full-keel lobster boat rights itself. The hull's own buoyancy holds
+		// it up to a good heel; past this angle a keel righting moment joins in, growing with the
+		// heel and damping the outward roll / pitch rate, so a big sea can lay the boat right over
+		// but it comes back up. (The hard limit below is the guarantee that it can never invert.)
+		{
+			const heel = Math.acos( clamp( up.y, - 1, 1 ) ); // 0..pi: how far the mast is off vertical
+			if ( heel > this.guardFrom ) {
+
+				_v.copy( up ).cross( WORLD_UP ); // world axis that turns the mast back upright
+				const len = _v.length();
+				if ( len > 1e-6 ) {
+
+					_v.multiplyScalar( 1 / len );
+					const K = 0.5 * ( this.pitchStiffness + this.rollStiffness );
+					const rate = this.angular.dot( _v ); // < 0 while the boat rolls further over
+					T.addScaledVector( _v, K * ( heel - this.guardFrom ) * 1.5 - rate * K * 0.12 );
+
+				}
+
+			}
+		}
+
 		// ---- mooring lines when docked and not driven
 		if ( this.moored && ! this.driven ) {
 
@@ -423,6 +455,29 @@ export class BoatController {
 
 		}
 
+		// hard capsize limit: the mast is never allowed past this angle, so the hull cannot end up
+		// inverted however violent the sea gets. Rotate the boat back to the limit about the tilt
+		// axis and drop the outward roll / pitch rate.
+		{
+			_v.set( 0, 1, 0 ).applyQuaternion( this.quaternion ); // the boat's up, in world
+			const cosT = clamp( _v.y, - 1, 1 );
+			if ( cosT < Math.cos( this.capsizeAt ) ) {
+
+				_g.copy( _v ).cross( WORLD_UP ); // axis that turns the mast back upright
+				const len = _g.length();
+				if ( len > 1e-6 ) {
+
+					_g.multiplyScalar( 1 / len );
+					_dq.setFromAxisAngle( _g, Math.acos( cosT ) - this.capsizeAt ); // back to the limit
+					this.quaternion.premultiply( _dq ).normalize();
+					const outward = this.angular.dot( _g ); // < 0 while the boat rolls further over
+					if ( outward < 0 ) this.angular.addScaledVector( _g, - outward );
+
+				}
+
+			}
+		}
+
 		// origin = com - R * comLocal
 		this.position.copy( comW ).sub( _v.copy( this.com ).applyQuaternion( this.quaternion ) );
 
@@ -446,8 +501,20 @@ export class BoatController {
 		this.steer = 0;
 		this.rpm = 0;
 		this.moored = true;
+		this.anchored = false;
 		this.mooring.anchor.copy( WORLD.boatDock.position );
 		this.mooring.heading = WORLD.boatDock.heading;
+
+	}
+
+	// mean height of the water under the hull (m; sea level until the first read-back): what the
+	// boat floats on, for multiplayer to set it on the other games' own waves
+	get waterLevel() {
+
+		if ( ! this.hasWater ) return G.seaLevel.value;
+		let s = 0;
+		for ( let i = 0; i < this.waterH.length; i ++ ) s += this.waterH[ i ];
+		return s / this.waterH.length;
 
 	}
 
@@ -466,7 +533,7 @@ export class BoatController {
 
 			this.toWorld( this.samples[ i ].p, _t );
 			const d = ( _t.x - p.x ) ** 2 + ( _t.z - p.z ) ** 2;
-			if ( d < bd ) { bd = d; best = this.hasWater ? this.hEff[ i ] : 0; }
+			if ( d < bd ) { bd = d; best = this.hasWater ? this.hEff[ i ] : G.seaLevel.value; }
 
 		}
 

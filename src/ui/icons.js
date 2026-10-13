@@ -53,6 +53,8 @@ const PATHS = {
 	compass: '<circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2.2 4.8-4.8 2.2 2.2-4.8z"/>',
 	anchor: '<circle cx="12" cy="5" r="2"/><path d="M12 7v14M5 12H3a9 9 0 0 0 18 0h-2M8 10h8"/>',
 	fog: '<path d="M4 8h13M3 12h18M6 16h14M9 20h7"/>',
+	bird: '<path d="M2 9.5c2.2 0 3.9-1.8 5.6-3.8C9.3 3.7 11.4 3 13.2 3.8"/><path d="M22 9.5c-2.2 0-3.9-1.8-5.6-3.8C14.7 3.7 12.6 3 10.8 3.8"/>',
+	fish: '<path d="M6.5 12C8.4 8.6 11.3 6.6 14 6.6s5.2 1.8 6.3 5.4c-1.1 3.6-3.6 5.4-6.3 5.4s-5.6-2-7.5-5.4z"/><path d="m6.5 12-3.2-3.4v6.8z"/><circle cx="16" cy="10.6" r="0.9" fill="currentColor" stroke="none"/>',
 
 	// sea states (preset chips)
 	calm: '<path d="M8 13.5a4 4 0 0 1 8 0"/><path d="M3 16.5h18"/><path d="M7 20h10"/>',
@@ -90,6 +92,8 @@ const ALIASES = {
 	night: 'moon', dusk: 'sunset', dawn: 'sunset', sunrise: 'sunset',
 	heading: 'compass', navigation: 'compass', harbor: 'anchor', dock: 'anchor', pier: 'anchor',
 	haze: 'fog', mist: 'fog', shadows: 'shadow', lightning: 'bolt', energy: 'bolt',
+	wildlife: 'bird', birds: 'bird', gull: 'bird', gulls: 'bird', life: 'bird',
+	fish: 'fish', reef: 'fish', whale: 'fish', marine: 'fish',
 };
 
 export function hasIcon( name ) {

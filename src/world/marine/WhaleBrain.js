@@ -74,6 +74,11 @@ export class WhaleBrain {
 		this.seq = null;
 		this.state = 'cruise';
 		this.lastWrap = false;
+		// day/night + weather (EcoRhythm, set by Whale each frame): how often it comes up, how
+		// often it launches, and how deep it rides between breaths
+		this.surfaceBias = 1;
+		this.breachBias = 1;
+		this.deepBias = 0;
 		if ( query ) this.slot = query.allocate( 'whale', 1 );
 		this._place( 0 );
 		// seed the history with a straight run-in
@@ -329,7 +334,7 @@ export class WhaleBrain {
 
 		// now and then (about every other surfacing, i.e. every few minutes) a breach: sound, then
 		// drive up and launch two thirds of the body out of the water, twist, fall back on the side
-		if ( this.rand() < ( this.forceBreach ? 1 : 0.5 ) ) {
+		if ( this.rand() < ( this.forceBreach ? 1 : 0.5 * this.breachBias ) ) {
 
 			k.push( { t: 7, depth: 9, pitch: - 0.2, arch: 0, follow: 0.6, speed: 2.4, stroke: 0.1 } );
 			k.push( { t: 6, depth: 9, pitch: 0.45, arch: 0, follow: 0.3, speed: 3.5, stroke: 0.14, breach: 'launch' } );
@@ -343,6 +348,14 @@ export class WhaleBrain {
 		k.push( { t: 4.5, depth: 5.5, pitch: - 0.95, arch: - 0.12, follow: 0.12, speed: 1.9, stroke: 0.0, fluke: true } );
 		k.push( { t: 6, depth: 11, pitch: - 0.45, arch: 0, follow: 0.6, speed: 2.2, stroke: 0.08 } );
 		k.push( { t: 8, depth: 10, pitch: 0, arch: 0, follow: 0.85, speed: CRUISE_SPEED, stroke: 0.1 } );
+		// a rough sea: it carries more water over its back between breaths and sounds deeper
+		if ( this.deepBias > 0 ) {
+
+			const d = 1 + 0.55 * this.deepBias;
+			for ( const key of k ) if ( key.depth > 2.5 ) key.depth *= d;
+
+		}
+
 		this.seq = { keys: k, i: 0, t: 0, blown: false };
 		this.state = 'surface';
 
@@ -385,8 +398,10 @@ export class WhaleBrain {
 		const frac = ( ( this.u / this.length ) % 1 + 1 ) % 1;
 		if ( this.state === 'cruise' && frac > SURFACE_AT && frac < SURFACE_AT + 0.05 && ! this.lastWrap ) {
 
-			this._startSequence();
 			this.lastWrap = true;
+			// how often it comes up at all: more at dawn and after dark, and a rough sea keeps it
+			// down for some of its passes
+			if ( this.rand() < this.surfaceBias ) this._startSequence();
 
 		}
 

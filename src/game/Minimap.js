@@ -1,13 +1,16 @@
 import { WORLD } from '../world/WorldLayout.js';
 import { STAND } from './FishStand.js';
 import { CHANDLERY } from './Chandlery.js';
+import { t } from '../i18n/index.js';
 
 // Minimap, lower right: the island baked once from the terrain data into a 2D canvas (depth-tinted
 // sea, reef and seagrass, sand, grass and forest by height, rock, paths, village pads, the pier,
 // hill shading and a coastline), shown in a round window that turns with the view (forward is up,
 // a small N on the rim). Markers: the player (centre arrow), Joe's fish stand, Marta's chandlery
-// and the boat; markers beyond the rim sit on it with an arrow. With the fish finder upgrade, a
-// couple of soft rings mark the richest water in view.
+// and the boat; markers beyond the rim sit on it with an arrow. At sea the other islands get a marker
+// too (with the distance while it sits on the rim), and each is baked into a small canvas of its own
+// placed beside the home island's. With the fish finder upgrade, a couple of soft rings mark the
+// richest water in view.
 //
 // Per frame it only writes a few CSS transforms. The bake runs in row chunks over the first frames.
 //   const map = new Minimap( hudEl, game );  map.update( dt );  map.highlight( [ 'joe', 'marta' ] )
@@ -15,8 +18,8 @@ import { CHANDLERY } from './Chandlery.js';
 const N = 640; // baked canvas size (px)
 const EXT = 1280; // metres covered by the bake
 const X0 = - EXT / 2, Z0 = - 180 - EXT / 2; // world at canvas (0, 0): the island sits north of the bay
-const PPM = N / EXT; // canvas px per metre
 const ROWS_PER_FRAME = 48;
+const ISLE_N = 256; // baked canvas size for each outer island (px)
 
 const CSS = /* css */`
 .gm-map { position: absolute; right: var(--tw-edge); bottom: var(--tw-edge); width: calc(184 * var(--tw-u)); height: calc(184 * var(--tw-u));
@@ -25,7 +28,7 @@ const CSS = /* css */`
 .tw-root[data-panel='open'] .gm-map { right: calc(var(--tw-panel-w) + 2 * var(--tw-3)); }
 .gm-map-view { position: relative; width: 100%; height: 100%; border-radius: 50%; overflow: hidden; background: #0b2c48;
 	box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08), inset 0 0 18px rgba(0,0,0,0.45); }
-.gm-map-view canvas { position: absolute; left: 0; top: 0; width: ${ N }px; height: ${ N }px; transform-origin: 0 0; image-rendering: auto; }
+.gm-map-view canvas { position: absolute; left: 0; top: 0; transform-origin: 0 0; image-rendering: auto; }
 .gm-map-vig { position: absolute; inset: 0; border-radius: 50%; pointer-events: none;
 	background: radial-gradient(circle at 50% 50%, transparent 58%, rgba(4, 12, 20, 0.45) 100%); }
 .gm-map-marks { position: absolute; inset: 0; }
@@ -37,6 +40,12 @@ const CSS = /* css */`
 .gm-mk.is-joe > i { background: var(--tw-sun); }
 .gm-mk.is-marta > i { background: var(--tw-aqua); }
 .gm-mk.is-boat > i { background: #f2efe6; }
+.gm-mk.is-isle > i { background: #9fd27a; }
+.gm-mk.is-peer > i { width: calc(12 * var(--tw-u)); height: calc(12 * var(--tw-u)); margin: calc(-6 * var(--tw-u)) 0 0 calc(-6 * var(--tw-u)); }
+.gm-mk.is-peer > b { margin-top: calc(-15 * var(--tw-u)); transform-origin: calc(5 * var(--tw-u)) calc(15 * var(--tw-u)); }
+.gm-mk > em { position: absolute; left: 0; top: calc(11 * var(--tw-u)); transform: translateX(-50%); font: 600 calc(9 * var(--tw-u)) var(--tw-mono); font-style: normal;
+	color: #fff; white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,0.85); display: none; }
+.gm-mk.is-edge > em { display: block; }
 .gm-mk > b { position: absolute; left: 0; top: 0; width: 0; height: 0; border-left: calc(5 * var(--tw-u)) solid transparent; border-right: calc(5 * var(--tw-u)) solid transparent;
 	border-bottom: calc(7 * var(--tw-u)) solid rgba(255,255,255,0.9); margin: calc(-19 * var(--tw-u)) 0 0 calc(-5 * var(--tw-u)); transform-origin: calc(5 * var(--tw-u)) calc(19 * var(--tw-u)); display: none; }
 .gm-mk.is-edge > b { display: block; }
@@ -68,6 +77,7 @@ const ICON = {
 	fish: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 12c3-4 7-6 11-6 3 0 5 2 7 4l-2 2 2 2c-2 2-4 4-7 4-4 0-8-2-11-6Zm12-1.2a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4Z"/></svg>',
 	anchor: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="5" r="2"/><path d="M12 7v13M7 11h10M4 14c1 4 4 6 8 6s7-2 8-6"/></svg>',
 	boat: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v9H6l6-9Zm1 2 5 7h-5V5ZM3 14h18l-3 5H6l-3-5Z"/></svg>',
+	isle: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M2 19c3-5 6-8 10-8s7 3 10 8H2Z"/><path d="M12 11V5m0 0c-2-1-4 0-5 2m5-2c2-1 4 0 5 2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
 };
 
 const h = ( tag, cls, html ) => {
@@ -105,7 +115,7 @@ export class Minimap {
 		style.textContent = CSS;
 		document.head.append( style );
 
-		this.el = h( 'div', 'gm-map tw-glass', `<div class="gm-map-view"><canvas width="${ N }" height="${ N }"></canvas><div class="gm-map-vig"></div>
+		this.el = h( 'div', 'gm-map tw-glass', `<div class="gm-map-view"><canvas width="${ N }" height="${ N }" style="width: ${ N }px; height: ${ N }px"></canvas><div class="gm-map-vig"></div>
 			<div class="gm-map-marks"></div>
 			<div class="gm-map-me"><svg viewBox="0 0 24 24"><path d="M12 2 20 21 12 16.5 4 21Z" fill="#fff" stroke="#0b1418" stroke-width="1.4" stroke-linejoin="round"/></svg></div></div>` );
 		this.el.setAttribute( 'aria-hidden', 'true' );
@@ -116,9 +126,15 @@ export class Minimap {
 
 		const mk = ( kind, icon ) => {
 
-			const e = h( 'div', 'gm-mk is-' + kind, `<b></b><i>${ icon }</i>` );
+			const e = h( 'div', 'gm-mk is-' + kind, `<b></b><i>${ icon }</i><em></em>` );
 			this.marks.append( e );
-			return { el: e, arrow: e.firstChild };
+			return { el: e, arrow: e.firstChild, dist: e.lastChild };
+
+		};
+		const atSea = () => {
+
+			const m = game.app.player.mode;
+			return m === 'boat' || m === 'deck' || m === 'swim';
 
 		};
 
@@ -137,7 +153,10 @@ export class Minimap {
 
 			} },
 		];
-		this.north = h( 'div', 'gm-map-n', 'N' );
+		// the other islands: a marker each (at sea), and a canvas each baked like the home island's
+		const outer = game.app.terrainData.outer || [];
+		for ( const o of outer ) this.markers.push( { id: o.id, ...mk( 'isle', ICON.isle ), pos: () => ( { x: o.cx, z: o.cz } ), hideWhen: () => ! atSea(), showDist: true } );
+		this.north = h( 'div', 'gm-map-n', t( 'N' ) );
 		this.marks.append( this.north );
 		this.fish = [ h( 'div', 'gm-map-fish', '<i></i><i></i>' ), h( 'div', 'gm-map-fish', '<i></i><i></i>' ) ];
 		this.fish.forEach( ( f ) => this.marks.prepend( f ) );
@@ -147,9 +166,25 @@ export class Minimap {
 		this.radiusM = 110; // world radius shown (m), eased between on foot and at sea
 		this._hot = new Set();
 		this._size = 0;
-		this._bake = { row: 0, ctx: this.canvas.getContext( '2d' ), img: null, h: null, done: false };
-		this._bake.img = this._bake.ctx.createImageData( N, N );
-		this._bake.h = new Float32Array( N * N );
+		// bake layers: the home island's canvas, then one per outer island (baked after it)
+		const layer = ( canvas, src, n, x0, z0, ext ) => {
+
+			const ctx = canvas.getContext( '2d' );
+			return { canvas, src, n, x0, z0, ppm: n / ext, row: 0, ctx, img: ctx.createImageData( n, n ), h: new Float32Array( n * n ), done: false };
+
+		};
+		const T = game.app.terrainData;
+		this._layers = [ layer( this.canvas, T, N, X0, Z0, EXT ) ];
+		for ( const o of outer ) {
+
+			const c = h( 'canvas' );
+			c.width = c.height = ISLE_N;
+			c.style.width = c.style.height = ISLE_N + 'px';
+			this.canvas.after( c );
+			this._layers.push( layer( c, o, ISLE_N, o.x0, o.z0, o.size ) );
+
+		}
+
 		// the view's size, kept by a ResizeObserver (reading clientWidth per frame forces a style +
 		// layout pass right after last frame's transform writes)
 		this._viewSize = - 1;
@@ -193,15 +228,16 @@ export class Minimap {
 	}
 
 	// ---- bake (chunked)
+	// the layers bake one after another: home first
 	_bakeStep() {
 
-		const B = this._bake;
-		if ( B.done ) return;
-		const T = this.game.app.terrainData;
-		const res = T.res, tex = T.texel, org = T.origin;
+		const B = this._layers.find( ( l ) => ! l.done );
+		if ( ! B ) return;
+		const T = B.src, N = B.n, X0 = B.x0, Z0 = B.z0, PPM = B.ppm;
+		const res = T.res, tex = T.texel, gx0 = T.x0 ?? T.origin, gz0 = T.z0 ?? T.origin;
 		const idx = ( x, z ) => {
 
-			const i = Math.floor( ( x - org ) / tex ), j = Math.floor( ( z - org ) / tex );
+			const i = Math.floor( ( x - gx0 ) / tex ), j = Math.floor( ( z - gz0 ) / tex );
 			return i < 0 || j < 0 || i >= res || j >= res ? - 1 : j * res + i;
 
 		};
@@ -288,7 +324,15 @@ export class Minimap {
 
 		}
 
-		// the pier and its head
+		// the pier and its head (the home island's)
+		if ( B !== this._layers[ 0 ] ) {
+
+			B.done = true;
+			B.img = null;
+			return;
+
+		}
+
 		const W = WORLD.pier;
 		ctx.fillStyle = '#d9c7a0';
 		ctx.strokeStyle = 'rgba(40, 30, 20, 0.55)';
@@ -340,8 +384,12 @@ export class Minimap {
 
 		// map: player at the centre, forward up
 		const rot = - Math.PI / 2 - Math.atan2( fz, fx );
-		const s = kpm / PPM;
-		this._setStyle( this.canvas, 'transform', `translate(${ R }px, ${ R }px) rotate(${ rot }rad) scale(${ s }) translate(${ - ( x - X0 ) * PPM }px, ${ - ( z - Z0 ) * PPM }px)` );
+		for ( const L of this._layers ) {
+
+			const s = kpm / L.ppm;
+			this._setStyle( L.canvas, 'transform', `translate(${ R }px, ${ R }px) rotate(${ rot }rad) scale(${ s }) translate(${ - ( x - L.x0 ) * L.ppm }px, ${ - ( z - L.z0 ) * L.ppm }px)` );
+
+		}
 
 		const place = ( el, dx, dz, edgeInset, arrow ) => {
 
@@ -368,6 +416,35 @@ export class Minimap {
 			if ( hide ) continue;
 			const edge = place( m.el, q.x - x, q.z - z, 12, m.arrow );
 			this._toggle( m.el, 'is-edge', edge );
+			if ( m.showDist && edge ) {
+
+				const km = Math.hypot( q.x - x, q.z - z ) / 1000;
+				const txt = km < 1 ? `${ Math.round( km * 10 ) * 100 } m` : `${ km.toFixed( 1 ) } km`;
+				if ( m.dist.__gm_txt !== txt ) m.dist.textContent = m.dist.__gm_txt = txt;
+
+			}
+
+		}
+
+		// the other players on the shared sea (net/RemotePlayers): a dot in their colour each
+		const peers = app.net ? app.net.remote.positions() : [];
+		this._peers ||= [];
+		while ( this._peers.length < peers.length ) {
+
+			const e = h( 'div', 'gm-mk is-peer', '<b></b><i></i><em></em>' );
+			this.marks.append( e );
+			this._peers.push( { el: e, arrow: e.firstChild, dot: e.children[ 1 ], dist: e.lastChild } );
+
+		}
+
+		for ( let i = 0; i < this._peers.length; i ++ ) {
+
+			const m = this._peers[ i ], q = peers[ i ];
+			this._setStyle( m.el, 'display', q ? '' : 'none' );
+			if ( ! q ) continue;
+			this._setStyle( m.dot, 'background', q.color );
+			if ( m.dot.title !== q.name ) m.dot.title = q.name;
+			this._toggle( m.el, 'is-edge', place( m.el, q.x - x, q.z - z, 10, m.arrow ) );
 
 		}
 

@@ -4,6 +4,7 @@ import {
 } from '../engine/webgpu.js';
 import { GRAVITY } from '../core/Globals.js';
 import { LAYERS } from '../core/SceneRenderer.js';
+import { RHYTHM } from '../world/EcoRhythm.js';
 
 // GPU spray particles: drops, ligaments, dense spray and mist.
 //
@@ -23,7 +24,8 @@ import { LAYERS } from '../core/SceneRenderer.js';
 //  * mist is a thin, strongly forward-scattering, sky-tinted veil
 //  * clear sheets (a boat's bow sheet) are thin water: translucent, showing the sky, glowing when
 //    backlit, torn into strands and drop clusters as they age
-//  * all of it is darkened in the shadow of the wave that made it, of the clouds, and at night
+//  * all of it is darkened in the shadow of the wave that made it, of the clouds, and at night --
+//    except for the plankton carried along in the water, whose own cold light takes over after dark
 //
 // Particles collide with one moving body (the boat, setBody): its hull (plan outline with an
 // elliptic bow, up to the sheer) and one box (the wheelhouse). They are pushed out through the
@@ -59,6 +61,9 @@ const KIND = {
 	alpha: [ 0.55, 0.06, 0.8, 0.66, 0.22 ], // (dense spray: see-through, streaked by its motion, never cotton wool)
 	fadeIn: [ 0.02, 0.2, 0.02, 0.12, 0.02 ], // (dense spray blooms out of the splash instead of popping in)
 	fadeOut: [ 0.8, 0.45, 0.8, 0.7, 0.5 ], // fraction of life when it starts to fade
+	// how much of the sea's own night light each kind carries (bioluminescence): per drop of water
+	// torn off, so drops and ligaments (real water) carry the most, mist the least (it is mostly air)
+	bio: [ 1.0, 0.12, 0.9, 0.8, 0.55 ],
 };
 
 const fl = ( x ) => {
@@ -476,6 +481,8 @@ ${ deposit ? /* wgsl */`				// fell into the water (not onto the sand): its bubb
 	update() {
 
 		if ( ! this.updateKernel ) this._buildUpdate();
+		// the plankton's glow is read in one place: it follows the hour and the weather
+		this.bio.value = RHYTHM.sample().glow;
 		// CPU requests -> ring slots
 		const n = this.nReqParticles;
 		this.cpuStart.value = this.cpuHead;
@@ -517,6 +524,7 @@ ${ deposit ? /* wgsl */`				// fell into the water (not onto the sand): its bubb
 			uniforms: {
 				intensity: [ 'f32', 1 ],
 				maxDistance: [ 'f32', 320 ],
+				sprayBio: [ 'f32', 0 ], // strength of the plankton's glow: 0 by day, ~1 on a dark night
 			},
 			storage: {
 				sprayPosR: this.pos,
@@ -621,7 +629,14 @@ ${ deposit ? /* wgsl */`				// fell into the water (not onto the sand): its bubb
 	// through it (forward lobe) is passed on: the thin torn parts glow when backlit
 	let cClear = frame.skyIrradiance * 0.95 + sun * 0.05;
 	let fClear = sun * ( sprayPhaseHG( cosT, 0.8 ) * 1.1 );
-	let col = select( select( select( cSpray, cClear, isClear ), cMist, isMist ), cWater, water );
+	// Bioluminescence: the plankton in the water light up as it is torn apart, and go dark again
+	// within about half a second (a shear flash). It is their own light, so unlike everything above
+	// it needs no sky and no sun: after dark it is the only thing the spray shows, and it rides on
+	// the same coverage as the rest, so a wake still weighs as much water as it throws. How much a
+	// given parcel of water carries varies, which is what makes it sparkle instead of shining evenly.
+	let flash = exp( age * - 2.2 ) * ( 0.3 + 0.7 * fract( info.w * 3.71 ) );
+	var col = select( select( select( cSpray, cClear, isClear ), cMist, isMist ), cWater, water );
+	col += mat.sprayBio * ${ byKind( 'kind', KIND.bio ) } * flash * vec3f( 0.16, 0.85, 1.0 ) * 1.15;
 	o.vFwd = vec4f( select( select( select( fSpray, fClear, isClear ), fMist, isMist ), vec3f( 0.0 ), water ), halfX / pixel );
 
 	// opacity over the particle's life
@@ -722,7 +737,9 @@ ${ deposit ? /* wgsl */`				// fell into the water (not onto the sand): its bubb
 		this.params = {
 			intensity: mat.uniforms.intensity,
 			maxDistance: mat.uniforms.maxDistance,
+			sprayBio: mat.uniforms.sprayBio,
 		};
+		this.bio = mat.uniforms.sprayBio;
 
 		const mesh = this.mesh = new Mesh( geo, mat );
 		mesh.count = this.N;

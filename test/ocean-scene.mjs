@@ -133,10 +133,16 @@ export async function makeOceanScene( { W = 2560, H = 1267, terrain = true, caus
 
 	const state = {
 		W, H, ctx, scene, fft, cdlod, surface, waterMaterial, camera, sr, mr, caustics: cau, frame, before: [],
-		async save( path ) {
+		// the tonemapped frame as RGBA8 (so a test can compare two states pixel by pixel)
+		async read() {
 
 			const img = await readTexture( ldr.texture );
-			writePNG( path, W, H, new Uint8Array( img.data ) );
+			return new Uint8Array( img.data );
+
+		},
+		async save( path ) {
+
+			writePNG( path, W, H, await state.read() );
 
 		},
 		async time( n = 30 ) {

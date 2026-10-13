@@ -1,6 +1,7 @@
 import * as THREE from '../engine/index.js';
 import { G } from '../core/Globals.js';
 import { VegSite, scatterVegetation, buildGrassMask, RULES } from './vegetation/Scatter.js';
+import { scatterIsland } from './vegetation/IslandScatter.js';
 import { VegType, LodLevel } from './vegetation/InstanceLOD.js';
 import { GrassField } from './vegetation/GrassField.js';
 import { uCamPos, uGustOffset, UNDER_FERN_FADE } from './vegetation/VegNodes.js';
@@ -105,6 +106,14 @@ export class Vegetation {
 		const site = new VegSite( terrain, villageObstacles( village ) );
 		this.site = site;
 		const recs = scatterVegetation( site );
+		// the outer islands (TerrainData.outer) add theirs to the same lists: same meshes, same LOD
+		for ( const o of terrain.outer || [] ) {
+
+			const r = scatterIsland( o );
+			for ( const k in r ) recs[ k ].push( ...r[ k ] );
+
+		}
+
 		this.records = recs;
 		const t1 = performance.now();
 		const grassMask = buildGrassMask( site );

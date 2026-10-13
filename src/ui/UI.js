@@ -1,4 +1,5 @@
 import { icon, brandMark } from './icons.js';
+import { t } from '../i18n/index.js';
 
 // Tidewater UI: settings panel (tabs → folders → controls), HUD, help,
 // photo mode, start overlay and loader. Plain DOM, no dependencies.
@@ -15,6 +16,9 @@ const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&#39
 const esc = ( s ) => String( s ?? '' ).replace( /[&<>"']/g, ( c ) => ESC[ c ] );
 
 // Tiny element factory: h( 'button', 'cls', { type: 'button', text: 'Hi' } )
+// `text` and `html` are the last stop before the DOM, so they are translated here:
+// every literal passed through them is looked up in the locale table (unknown
+// strings — numbers, icon markup, ids — come back untouched).
 function h( tag, cls, attrs ) {
 
 	const e = document.createElement( tag );
@@ -25,8 +29,8 @@ function h( tag, cls, attrs ) {
 
 			const v = attrs[ k ];
 			if ( v === undefined || v === null || v === false ) continue;
-			if ( k === 'html' ) e.innerHTML = v;
-			else if ( k === 'text' ) e.textContent = v;
+			if ( k === 'html' ) e.innerHTML = t( v );
+			else if ( k === 'text' ) e.textContent = t( v );
 			else e.setAttribute( k, v === true ? '' : String( v ) );
 
 		}
@@ -144,15 +148,18 @@ const fmtClock = ( hours ) => {
 
 const CARDINALS = [ 'N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW' ];
 
+// Picks the HUD icon for a traversal mode. Matched against the English label and
+// against its Chinese counterpart, so it works in either locale.
 function modeIcon( label ) {
 
 	const s = String( label || '' ).toLowerCase();
-	if ( s.includes( 'boat' ) ) return 'boat';
-	if ( s.includes( 'div' ) ) return 'dive';
-	if ( s.includes( 'swim' ) ) return 'swim';
-	if ( s.includes( 'free' ) || s.includes( 'fly' ) ) return 'move';
-	if ( s.includes( 'photo' ) ) return 'viewfinder';
-	if ( s.includes( 'walk' ) || s.includes( 'run' ) ) return 'walk';
+	if ( s.includes( 'boat' ) || s.includes( '船' ) ) return 'boat';
+	if ( s.includes( 'div' ) || s.includes( '潜' ) ) return 'dive';
+	if ( s.includes( 'swim' ) || s.includes( '游' ) ) return 'swim';
+	if ( s.includes( 'free' ) || s.includes( 'fly' ) || s.includes( '自由' ) ) return 'move';
+	if ( s.includes( 'photo' ) || s.includes( '拍照' ) ) return 'viewfinder';
+	if ( s.includes( 'deck' ) || s.includes( '甲板' ) ) return 'boat';
+	if ( s.includes( 'walk' ) || s.includes( 'run' ) || s.includes( '步行' ) ) return 'walk';
 	return 'dot';
 
 }
@@ -189,7 +196,7 @@ class Control {
 		this.ui = parent.ui;
 		this.opts = opts;
 		this.type = type;
-		this.label = opts.label ?? ( opts.key != null ? String( opts.key ) : '' );
+		this.label = t( opts.label ?? ( opts.key != null ? String( opts.key ) : '' ) );
 		if ( opts.object && opts.key != null ) {
 
 			this.object = opts.object;
@@ -291,7 +298,7 @@ class Control {
 
 	setLabel( text ) {
 
-		this.label = String( text );
+		this.label = t( text == null ? '' : String( text ) );
 		if ( this.labelText ) this.labelText.textContent = this.label;
 		return this;
 
@@ -332,12 +339,12 @@ class Control {
 		const txt = h( 'span', 'tw-label-text', { text } );
 		if ( tooltip ) {
 
-			txt.dataset.tip = tooltip;
-			txt.dataset.tipHint = 'Double-click to reset';
+			txt.dataset.tip = t( tooltip );
+			txt.dataset.tipHint = t( 'Double-click to reset' );
 
 		}
 
-		const rst = h( 'button', 'tw-reset', { type: 'button', tabindex: '-1', 'aria-label': `Reset ${ text }`, 'data-tip': 'Reset to default', html: icon( 'reset' ) } );
+		const rst = h( 'button', 'tw-reset', { type: 'button', tabindex: '-1', 'aria-label': t( 'Reset {x}', { x: text } ), 'data-tip': 'Reset to default', html: icon( 'reset' ) } );
 		rst.addEventListener( 'click', ( e ) => {
 
 			e.stopPropagation();
@@ -851,7 +858,7 @@ class SelectControl extends Control {
 		this.btnText = h( 'span', 'tw-dd-text' );
 		this.btn.append( this.btnText );
 		this.btn.insertAdjacentHTML( 'beforeend', icon( 'chevron-down', 'tw-dd-chev' ) );
-		const open = () => this.ui._openMenu( this.btn, this.options.map( ( o ) => o.label ), this._index(), ( i ) => this._pick( i ) );
+		const open = () => this.ui._openMenu( this.btn, this.options.map( ( o ) => t( o.label ) ), this._index(), ( i ) => this._pick( i ) );
 		this.btn.addEventListener( 'click', () => {
 
 			if ( this.ui._menuAnchor === this.btn ) this.ui._closeMenu();
@@ -912,7 +919,7 @@ class SelectControl extends Control {
 
 			} else {
 
-				this.btnText.textContent = i >= 0 ? this.options[ i ].label : String( this.value ?? '—' );
+				this.btnText.textContent = i >= 0 ? t( this.options[ i ].label ) : String( this.value ?? '—' );
 
 			}
 
@@ -1099,13 +1106,13 @@ class PresetsControl extends Control {
 
 		}
 
-		const grid = h( 'div', 'tw-presets', { role: 'radiogroup', 'aria-label': o.label || 'Presets' } );
+		const grid = h( 'div', 'tw-presets', { role: 'radiogroup', 'aria-label': t( o.label || 'Presets' ) } );
 		grid.style.setProperty( '--n', Math.min( 4, Math.max( 1, this.presets.length ) ) );
 		this.chips = this.presets.map( ( p, i ) => {
 
 			const b = h( 'button', 'tw-chip', { type: 'button', role: 'radio', 'aria-checked': 'false' } );
-			b.innerHTML = ( p.icon ? icon( p.icon ) : '' ) + `<span>${ esc( p.label ) }</span>`;
-			if ( p.tooltip || p.description ) b.dataset.tip = p.tooltip || p.description;
+			b.innerHTML = ( p.icon ? icon( p.icon ) : '' ) + `<span>${ esc( t( p.label ) ) }</span>`;
+			if ( p.tooltip || p.description ) b.dataset.tip = t( p.tooltip || p.description );
 			b.addEventListener( 'click', () => this.apply( i ) );
 			grid.append( b );
 			return b;
@@ -1251,7 +1258,7 @@ class InfoControl extends Control {
 
 		}
 
-		if ( typeof v === 'number' ) v = Number.isInteger( v ) ? v.toLocaleString( 'en-US' ) : v.toFixed( 2 );
+		if ( typeof v === 'number' ) v = Number.isInteger( v ) ? v.toLocaleString( 'zh-CN' ) : v.toFixed( 2 );
 		const s = v == null || v === '' ? '—' : String( v );
 		if ( s !== this._s ) {
 
@@ -1605,7 +1612,7 @@ class TimeOfDayControl extends Control {
 		this.glint.setAttribute( 'opacity', e > 0 ? ( 0.85 * Math.pow( 1 - e, 1.5 ) ).toFixed( 3 ) : '0' );
 
 		const clock = fmtClock( hrs );
-		const phase = phaseAt( hrs );
+		const phase = t( phaseAt( hrs ) );
 		this.valueEl.textContent = clock;
 		this.phase.textContent = phase;
 		this.knob.style.left = `${ ( hrs / 24 ) * 100 }%`;
@@ -1735,14 +1742,14 @@ class Folder extends Container {
 	constructor( parent, label, { icon: iconName, open = true, tooltip } = {} ) {
 
 		super( parent.ui, parent );
-		this.label = String( label ?? '' );
+		this.label = t( label ?? '' );
 		this.isOpen = true;
 		this.el = h( 'section', 'tw-folder' + ( parent instanceof Folder ? ' is-nested' : '' ) );
 		const bodyId = uid( 'tw-fb' );
 		this.head = h( 'button', 'tw-folder-head', { type: 'button', 'aria-expanded': 'true', 'aria-controls': bodyId } );
 		this.head.innerHTML = ( iconName ? icon( iconName, 'tw-folder-ico' ) : '' ) +
 			`<span class="tw-folder-title">${ esc( this.label ) }</span>` + icon( 'chevron-down', 'tw-folder-chev' );
-		if ( tooltip ) this.head.dataset.tip = tooltip;
+		if ( tooltip ) this.head.dataset.tip = t( tooltip );
 		this.wrap = h( 'div', 'tw-folder-wrap', { id: bodyId } );
 		this.body = h( 'div', 'tw-folder-body' );
 		this.wrap.append( this.body );
@@ -1791,7 +1798,7 @@ class Folder extends Container {
 
 	setLabel( text ) {
 
-		this.label = String( text );
+		this.label = t( text == null ? '' : String( text ) );
 		this.head.querySelector( '.tw-folder-title' ).textContent = this.label;
 		return this;
 
@@ -1807,7 +1814,7 @@ class Tab extends Container {
 		this.isTab = true;
 		this.isOpen = true;
 		this.id = id;
-		this.label = String( label );
+		this.label = t( label == null ? '' : String( label ) );
 		this.iconName = iconName;
 		this._scroll = 0;
 		const pageId = uid( 'tw-page' ), tabId = uid( 'tw-tab' );
@@ -1928,8 +1935,8 @@ export class UI {
 			<div class="tw-stats-main"><span class="tw-fps">--</span><span class="tw-fps-unit">fps</span></div>
 			<canvas class="tw-spark"></canvas>
 			<div class="tw-stats-sub">
-				<span class="tw-kv"><span class="tw-k">frame</span><span class="tw-v tw-ms">--</span></span>
-				<span class="tw-kv tw-kv-gpu" hidden><span class="tw-k">gpu</span><span class="tw-v tw-gpu">--</span></span>
+				<span class="tw-kv"><span class="tw-k">${ t( 'frame' ) }</span><span class="tw-v tw-ms">--</span></span>
+				<span class="tw-kv tw-kv-gpu" hidden><span class="tw-k">${ t( 'gpu' ) }</span><span class="tw-v tw-gpu">--</span></span>
 			</div>`;
 		this.fpsEl = stats.querySelector( '.tw-fps' );
 		this.msEl = stats.querySelector( '.tw-ms' );
@@ -1965,7 +1972,7 @@ export class UI {
 			<span class="tw-depth-mark"></span>
 			<div class="tw-depth-read">
 				<div class="tw-depth-line"><span class="tw-depth-num">0.0</span><span class="tw-unit">m</span></div>
-				<span class="tw-g-lab">Depth</span>
+				<span class="tw-g-lab">${ t( 'Depth' ) }</span>
 			</div>`;
 		this.depthCanvas = this.depthEl.querySelector( '.tw-depth-tape' );
 		this.depthNum = this.depthEl.querySelector( '.tw-depth-num' );
@@ -1974,7 +1981,7 @@ export class UI {
 
 		// the one element that survives photo mode
 		this.photoHint = h( 'div', 'tw-photo-hint' );
-		this.photoHint.innerHTML = '<kbd>P</kbd><span>Exit photo mode</span>';
+		this.photoHint.innerHTML = `<kbd>P</kbd><span>${ t( 'Exit photo mode' ) }</span>`;
 
 		this.root.append( hud, this.photoHint );
 
@@ -2036,7 +2043,7 @@ export class UI {
 					<circle class="tw-dial-head" r="3" cx="24.64" cy="95.36"/>
 					<text class="tw-dial-rpm" x="60" y="105">rpm 0%</text>
 				</svg>
-				<div class="tw-dial-center"><span class="tw-speed">0.0</span><span class="tw-g-unit">knots</span></div>
+				<div class="tw-dial-center"><span class="tw-speed">0.0</span><span class="tw-g-unit">${ t( 'knots' ) }</span></div>
 			</div>
 			<div class="tw-compass">
 				<svg viewBox="0 0 100 100">
@@ -2062,7 +2069,7 @@ export class UI {
 
 	_buildPanel() {
 
-		const panel = this.panel = h( 'aside', 'tw-panel tw-glass tw-interactive', { 'aria-label': 'Settings' } );
+		const panel = this.panel = h( 'aside', 'tw-panel tw-glass tw-interactive', { 'aria-label': t( 'Settings' ) } );
 		panel.inert = true;
 
 		const head = h( 'header', 'tw-panel-head' );
@@ -2081,7 +2088,7 @@ export class UI {
 		action( 'chevrons-right', 'Collapse (H)', () => this.togglePanel( false ) );
 		head.append( actions );
 
-		this.tabBar = h( 'div', 'tw-tabs', { role: 'tablist', 'aria-label': 'Settings sections' } );
+		this.tabBar = h( 'div', 'tw-tabs', { role: 'tablist', 'aria-label': t( 'Settings sections' ) } );
 		this.tabBar.addEventListener( 'keydown', ( e ) => {
 
 			const d = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? - 1 : 0;
@@ -2103,11 +2110,11 @@ export class UI {
 		this.pages = h( 'div', 'tw-pages' );
 
 		const foot = h( 'footer', 'tw-panel-foot' );
-		foot.innerHTML = '<span><kbd>H</kbd>Hide</span><span><kbd>F1</kbd>Controls</span><span><kbd>P</kbd>Photo mode</span>';
+		foot.innerHTML = `<span><kbd>H</kbd>${ t( 'Hide' ) }</span><span><kbd>F1</kbd>${ t( 'Controls' ) }</span><span><kbd>P</kbd>${ t( 'Photo mode' ) }</span>`;
 		panel.append( head, this.tabBar, this.pages, foot );
 
 		// collapsed state: a slim rail of tab icons
-		const rail = this.rail = h( 'nav', 'tw-rail tw-glass tw-interactive', { 'aria-label': 'Settings' } );
+		const rail = this.rail = h( 'nav', 'tw-rail tw-glass tw-interactive', { 'aria-label': t( 'Settings' ) } );
 		const open = h( 'button', 'tw-rail-btn tw-rail-open', { type: 'button', 'aria-label': 'Open settings', 'data-tip': 'Settings (H)', 'data-tip-side': 'left', html: icon( 'sliders' ) } );
 		open.addEventListener( 'click', () => this.togglePanel( true ) );
 		this.railTabs = h( 'div', 'tw-rail-tabs' );
@@ -2131,44 +2138,44 @@ export class UI {
 			<div class="tw-help-card tw-glass">
 				<header class="tw-help-head">
 					<div>
-						<h2 id="tw-help-title">Controls</h2>
-						<p>Click the view to capture the mouse. Esc releases it.</p>
+						<h2 id="tw-help-title">${ t( 'Controls' ) }</h2>
+						<p>${ t( 'Click the view to capture the mouse. Esc releases it.' ) }</p>
 					</div>
-					<button type="button" class="tw-icon-btn tw-help-close" aria-label="Close" data-tip="Close (F1)">${ icon( 'close' ) }</button>
+					<button type="button" class="tw-icon-btn tw-help-close" aria-label="${ t( 'Close' ) }" data-tip="${ t( 'Close (F1)' ) }">${ icon( 'close' ) }</button>
 				</header>
 				<div class="tw-help-grid">
 					<section>
-						<h3>Move</h3>
-						${ row( wasd, 'Move' ) }
-						${ row( mouse, 'Look around<small>Click to capture</small>' ) }
-						${ row( k( 'Shift' ), 'Sprint, boat boost' ) }
-						${ row( k( 'Space' ), 'Jump, swim up' ) }
-						${ row( k( 'C' ), 'Crouch, dive' ) }
+						<h3>${ t( 'Move' ) }</h3>
+						${ row( wasd, t( 'Move' ) ) }
+						${ row( mouse, t( 'Look around<small>Click to capture</small>' ) ) }
+						${ row( k( 'Shift' ), t( 'Sprint, boat boost' ) ) }
+						${ row( k( 'Space' ), t( 'Jump, swim up' ) ) }
+						${ row( k( 'C' ), t( 'Crouch, dive' ) ) }
 					</section>
 					<section>
-						<h3>Interact</h3>
-						${ row( k( 'E' ), 'Interact<small>Board, helm, step ashore, trade</small>' ) }
-						${ row( k( 'V' ), 'Boat camera<small>1st / 3rd person</small>' ) }
-						${ row( k( 'R' ), 'Fishing rod<small>Take out / put away</small>' ) }
-						${ row( k( 'LMB' ), 'Cast, strike, reel<small>Hold to wind up / reel</small>' ) }
-						${ row( k( 'RMB' ), 'Reel in an empty line' ) }
-						${ row( k( 'I' ), 'Cooler and fish log' ) }
-						${ row( k( 'F' ), 'Free camera' ) }
-						${ row( k( 'T' ), 'Pause time' ) }
-						${ row( k( 'L' ), 'Flashlight' ) }
-						${ row( k( 'M' ), 'Mute' ) }
+						<h3>${ t( 'Interact' ) }</h3>
+						${ row( k( 'E' ), t( 'Interact<small>Board, helm, step ashore, trade</small>' ) ) }
+						${ row( k( 'V' ), t( 'Boat camera<small>1st / 3rd person</small>' ) ) }
+						${ row( k( 'R' ), t( 'Fishing rod<small>Take out / put away</small>' ) ) }
+						${ row( k( 'LMB' ), t( 'Cast, strike, reel<small>Hold to wind up / reel</small>' ) ) }
+						${ row( k( 'RMB' ), t( 'Reel in an empty line' ) ) }
+						${ row( k( 'I' ), t( 'Cooler and fish log' ) ) }
+						${ row( k( 'F' ), t( 'Free camera' ) ) }
+						${ row( k( 'T' ), t( 'Pause time' ) ) }
+						${ row( k( 'L' ), t( 'Flashlight' ) ) }
+						${ row( k( 'M' ), t( 'Mute' ) ) }
 					</section>
 					<section>
-						<h3>Interface</h3>
-						${ row( k( 'H' ), 'Settings panel' ) }
-						${ row( k( 'P' ), 'Photo mode<small>Hides all interface</small>' ) }
-						${ row( k( 'F1' ) + k( '?' ), 'This sheet' ) }
-						${ row( k( 'Esc' ), 'Release the mouse' ) }
+						<h3>${ t( 'Interface' ) }</h3>
+						${ row( k( 'H' ), t( 'Settings panel' ) ) }
+						${ row( k( 'P' ), t( 'Photo mode<small>Hides all interface</small>' ) ) }
+						${ row( k( 'F1' ) + k( '?' ), t( 'This sheet' ) ) }
+						${ row( k( 'Esc' ), t( 'Release the mouse' ) ) }
 					</section>
 				</div>
 				<div class="tw-help-guide">
-					<span><b>How to play:</b> catch fish, sell them to Joe at the fish stand by the pier, and buy upgrades from Marta at the chandlery by the boathouse. Both are on the map (lower right).</span>
-					<button type="button" class="gm-btn is-ghost tw-help-replay">Replay the guide</button>
+					<span><b>${ t( 'How to play:' ) }</b> ${ t( 'catch fish, sell them to Joe at the fish stand by the pier, and buy upgrades from Marta at the chandlery by the boathouse. Both are on the map (lower right).' ) }</span>
+					<button type="button" class="gm-btn is-ghost tw-help-replay">${ t( 'Replay the guide' ) }</button>
 				</div>
 			</div>`;
 		el.querySelector( '.tw-help-close' ).addEventListener( 'click', () => this.toggleHelp( false ) );
@@ -2189,13 +2196,13 @@ export class UI {
 			<div class="tw-start-inner">
 				${ brandMark( 'tw-start-mark' ) }
 				<div class="tw-start-title">TIDEWATER</div>
-				<button type="button" class="tw-start-cta"><span class="tw-start-pulse" aria-hidden="true"></span>${ icon( 'mouse' ) }<span>Click to explore</span></button>
+				<button type="button" class="tw-start-cta"><span class="tw-start-pulse" aria-hidden="true"></span>${ icon( 'mouse' ) }<span>${ t( 'Click to explore' ) }</span></button>
 				<div class="tw-start-keys">
-					<span><span class="tw-wasd"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span>Move</span>
-					<span><kbd class="tw-kbd-ico">${ icon( 'mouse' ) }</kbd>Look</span>
-					<span><kbd>E</kbd>Interact</span>
-					<span><kbd>H</kbd>Settings</span>
-					<span><kbd>F1</kbd>All controls</span>
+					<span><span class="tw-wasd"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span>${ t( 'Move' ) }</span>
+					<span><kbd class="tw-kbd-ico">${ icon( 'mouse' ) }</kbd>${ t( 'Look' ) }</span>
+					<span><kbd>E</kbd>${ t( 'Interact' ) }</span>
+					<span><kbd>H</kbd>${ t( 'Settings' ) }</span>
+					<span><kbd>F1</kbd>${ t( 'All controls' ) }</span>
 				</div>
 			</div>`;
 		this.root.append( el );
@@ -2430,12 +2437,12 @@ export class UI {
 
 	_tipOver( e ) {
 
-		const t = e.target.closest?.( '[data-tip]' );
-		if ( t === this._tipT ) return;
+		const el = e.target.closest?.( '[data-tip]' );
+		if ( el === this._tipT ) return;
 		this._hideTip();
-		if ( ! t || this._drag || document.pointerLockElement ) return;
-		this._tipT = t;
-		this._tipTimer = setTimeout( () => this._showTip( t ), t.closest( '.tw-rail' ) ? 220 : 520 );
+		if ( ! el || this._drag || document.pointerLockElement ) return;
+		this._tipT = el;
+		this._tipTimer = setTimeout( () => this._showTip( el ), el.closest( '.tw-rail' ) ? 220 : 520 );
 
 	}
 
@@ -2445,14 +2452,14 @@ export class UI {
 
 	}
 
-	_showTip( t ) {
+	_showTip( el ) {
 
-		if ( ! t.isConnected || ( t.classList.contains( 'tw-tab' ) && t.classList.contains( 'is-active' ) ) ) return;
+		if ( ! el.isConnected || ( el.classList.contains( 'tw-tab' ) && el.classList.contains( 'is-active' ) ) ) return;
 		const tip = this.tipEl;
-		tip.innerHTML = esc( t.dataset.tip ) + ( t.dataset.tipHint ? `<small>${ esc( t.dataset.tipHint ) }</small>` : '' );
+		tip.innerHTML = esc( t( el.dataset.tip ) ) + ( el.dataset.tipHint ? `<small>${ esc( t( el.dataset.tipHint ) ) }</small>` : '' );
 		tip.classList.add( 'is-on' );
-		const r = t.getBoundingClientRect(), tr = tip.getBoundingClientRect();
-		const left = t.dataset.tipSide === 'left';
+		const r = el.getBoundingClientRect(), tr = tip.getBoundingClientRect();
+		const left = el.dataset.tipSide === 'left';
 		let x, y;
 		if ( left ) {
 
@@ -2696,7 +2703,7 @@ export class UI {
 
 	setMode( label ) {
 
-		label = label == null ? '' : String( label );
+		label = t( label == null ? '' : String( label ) );
 		if ( label === this._mode ) return;
 		this._mode = label;
 		this.modeEl.classList.toggle( 'is-empty', ! label );
@@ -2722,14 +2729,14 @@ export class UI {
 		const on = key != null && key !== '';
 		if ( on ) {
 
-			const k = String( key ), t = text == null ? '' : String( text );
-			if ( k !== this._pKey || t !== this._pText ) {
+			const k = String( key ), txt = t( text == null ? '' : String( text ) );
+			if ( k !== this._pKey || txt !== this._pText ) {
 
 				this._pKey = k;
-				this._pText = t;
+				this._pText = txt;
 				this.promptKey.textContent = k;
 				this.promptKey.classList.toggle( 'is-wide', k.length > 1 );
-				this.promptText.textContent = t;
+				this.promptText.textContent = txt;
 				this.promptEl.classList.remove( 'is-bump' );
 				void this.promptEl.offsetWidth;
 				this.promptEl.classList.add( 'is-bump' );
@@ -2801,7 +2808,7 @@ export class UI {
 			this._bHdg = hq;
 			this.bCard.setAttribute( 'transform', `rotate(${ ( - hdg ).toFixed( 1 ) } 50 50)` );
 			this.bHdgText.textContent = `${ String( Math.round( hdg ) % 360 ).padStart( 3, '0' ) }°`;
-			this.bHdgCard.textContent = CARDINALS[ Math.round( hdg / 45 ) % 8 ];
+			this.bHdgCard.textContent = t( CARDINALS[ Math.round( hdg / 45 ) % 8 ] );
 
 		}
 
@@ -3020,11 +3027,13 @@ export class UI {
 	// Brief notification. Returns a function that dismisses it early.
 	toast( text, ms = 2500 ) {
 
-		text = String( text ?? '' );
+		// last stop for notifications: callers may pass English source strings
+		// (already translated ones simply fall through)
+		text = t( String( text ?? '' ) );
 		if ( ! text ) return () => {};
 
 		// repeated message: restart its timer instead of stacking duplicates
-		const same = this._toasts.find( ( t ) => t.text === text && ! t.leaving );
+		const same = this._toasts.find( ( e ) => e.text === text && ! e.leaving );
 		if ( same ) {
 
 			clearTimeout( same.timer );
@@ -3048,25 +3057,26 @@ export class UI {
 		void el.offsetWidth;
 		el.classList.add( 'is-in' );
 
-		const t = { text, el, bar, timer: 0, leaving: false };
-		t.dismiss = () => {
+		// (named `rec` so it does not shadow the imported `t()` translator)
+		const rec = { text, el, bar, timer: 0, leaving: false };
+		rec.dismiss = () => {
 
-			if ( t.leaving ) return;
-			t.leaving = true;
-			clearTimeout( t.timer );
+			if ( rec.leaving ) return;
+			rec.leaving = true;
+			clearTimeout( rec.timer );
 			el.style.setProperty( '--h', `${ el.offsetHeight }px` );
 			el.classList.remove( 'is-in' );
 			el.classList.add( 'is-out' );
-			const i = this._toasts.indexOf( t );
+			const i = this._toasts.indexOf( rec );
 			if ( i >= 0 ) this._toasts.splice( i, 1 );
 			setTimeout( () => el.remove(), 360 );
 
 		};
 
-		t.timer = setTimeout( t.dismiss, ms );
-		this._toasts.push( t );
+		rec.timer = setTimeout( rec.dismiss, ms );
+		this._toasts.push( rec );
 		while ( this._toasts.length > 4 ) this._toasts[ 0 ].dismiss();
-		return t.dismiss;
+		return rec.dismiss;
 
 	}
 
@@ -3236,7 +3246,7 @@ export class UI {
 
 		if ( status != null ) {
 
-			ld.status = String( status );
+			ld.status = t( String( status ) );
 			if ( ld.statusEl ) ld.statusEl.textContent = ld.status;
 			L.classList.toggle( 'is-compiling', /shader/i.test( ld.status ) );
 
@@ -3251,7 +3261,7 @@ export class UI {
 		const ld = this._loaderState();
 		if ( ! ( total > 0 ) ) return;
 		ld.detail = clamp( done / total, 0, 1 );
-		if ( ld.statusEl ) ld.statusEl.textContent = `${ ld.status.replace( /…$/, '' ) } · ${ done } / ${ total }`;
+		if ( ld.statusEl ) ld.statusEl.textContent = t( '{s} · {done} / {total}', { s: ld.status.replace( /…$/, '' ), done, total } );
 		this._loaderPaint();
 
 	}

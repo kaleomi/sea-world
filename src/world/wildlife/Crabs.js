@@ -1,4 +1,4 @@
-import { G } from '../../core/Globals.js';
+import { RHYTHM } from '../EcoRhythm.js';
 import { WORLD } from '../WorldLayout.js';
 import { mulberry32 } from '../../util/Noise.js';
 import { CRITTER } from './CritterShapes.js';
@@ -146,14 +146,13 @@ export class Crabs {
 
 	// ------------------------------------------------------------------ update
 
-	update( dt, viewer, batch, camera, blobs = null ) {
+	// eco: the shared day/night + weather reading (EcoRhythm). Sampled here if nobody passed one.
+	update( dt, viewer, batch, camera, blobs = null, eco = RHYTHM.sample() ) {
 
 		this.time += dt;
 		const cp = camera.position;
-		const night = G.night.value;
-		// dusk / night: ghost crabs come out
-		const sunY = G.sunDir.value.y;
-		this.activity = clamp( 0.45 + 0.5 * Math.max( night, smooth( 0.35, 0.05, sunY ) ), 0, 0.95 );
+		// dusk / night: ghost crabs come out. Rain washes them back into the burrow.
+		this.activity = eco.crab;
 
 		// (re)assign the pool to the burrows near the viewer, a few times a second
 		this.scan -= dt;

@@ -1,0 +1,13 @@
+services:
+  # the multiplayer relay (server/): one shared sea, served by Render over https / wss. It runs from
+  # the repository root because it shares src/net/Protocol.js and src/game/FishTable.js with the game.
+  - type: web
+    name: tidewater-sea
+    runtime: node
+    plan: free
+    buildCommand: npm ci --prefix server --omit=dev
+    startCommand: node server/index.js
+    healthCheckPath: /
+    envVars:
+      - key: HOST
+        value: 0.0.0.0

@@ -96,6 +96,8 @@ export const MIX = {
 	fishSplash: - 24, // a hooked fish thrashing at the surface, at 6 m
 	fishFlop: - 32, // the landed fish flapping on the line in front of you
 	coins: - 30, // paid at the stand
+	rain: - 31, // moderate rain at the listener (drizzle ~-14 dB, a downpour ~+4 dB)
+	thunder: - 11, // a close strike (distant ones are quieter and much duller)
 };
 
 // the fishing sounds (loaded when the rod comes out)
@@ -158,7 +160,7 @@ export class SoundScape {
 		this._warned = new Set();
 		this.env = {
 			lx: 0, ly: 1.7, lz: 0, fx: 0, fy: 0, fz: - 1, ux: 0, uy: 1, uz: 0,
-			u: 0, depth: 0, surf: 0.5, shoreDist: 60, onLand: true, wind: 7, day: 1, nearPier: false, hour: null,
+			u: 0, depth: 0, surf: 0.5, shoreDist: 60, onLand: true, wind: 7, day: 1, rain: 0, nearPier: false, hour: null,
 			shoreX: 0, shoreZ: 1,
 			boat: { active: false, rpm: 0, speed: 0, x: 0, y: 0, z: 0, inside: false },
 		};
@@ -275,6 +277,7 @@ export class SoundScape {
 			this._life( step );
 			this._birds( now, step );
 			this._whale( now, step );
+			this._rain( now );
 			this._reel( now );
 
 		} catch ( e ) {
@@ -515,6 +518,11 @@ export class SoundScape {
 		this.near = gain( 1, this.master );
 		this.foot = gain( 1, this.above );
 
+		// rain: a synthesised bed (no sample), through `above`, so it is muffled underwater
+		this.rainOut = gain( 1, this.above );
+		this._rainBed = null;
+		this._rainLevel = 0;
+
 		// distant surf: from the shore direction
 		this.surfPan = panner( this.above, 1, 0 );
 		this.surfFar = gain( 1, this.surfPan );
@@ -622,6 +630,101 @@ export class SoundScape {
 
 		this._ramp( bed.gain.gain, g * bed.trim, tau );
 		this._ramp( bed.src.playbackRate, rate, 0.15 );
+
+	}
+
+	// ------------------------------------------------------------------ weather
+
+	// Rain and thunder are synthesised, not sampled: one noise buffer, filtered two ways for the rain
+	// (the hiss of drops and the body of a downpour) and one lowpassed burst per strike for thunder.
+	// Nothing to download, and the level can follow the weather continuously instead of crossfading
+	// between fixed recordings. The bed runs through `above`, so it is muffled underwater like the rest.
+	_noise( seconds = 2 ) {
+
+		if ( this._noiseBuf ) return this._noiseBuf;
+		const c = this.ctx, n = Math.floor( c.sampleRate * seconds );
+		const b = c.createBuffer( 1, n, c.sampleRate );
+		const d = b.getChannelData( 0 );
+		// slightly pink: rain is not hiss, it has a body (one-pole lowpassed white noise)
+		let last = 0;
+		for ( let i = 0; i < n; i ++ ) {
+
+			const w = Math.random() * 2 - 1;
+			last = last * 0.72 + w * 0.28;
+			d[ i ] = last * 1.6 + w * 0.35;
+
+		}
+
+		this._noiseBuf = b;
+		return b;
+
+	}
+
+	// from Weather.update: rain 0..1, wetness 0..1
+	setWeather( rain = 0 ) {
+
+		this._rainLevel = clamp( num( rain, 0 ), 0, 1 );
+
+	}
+
+	_rain( now ) {
+
+		const level = this._rainLevel;
+		let bed = this._rainBed;
+		if ( ! bed ) {
+
+			if ( level < 1e-3 ) return;
+			const c = this.ctx;
+			const src = c.createBufferSource();
+			src.buffer = this._noise();
+			src.loop = true;
+			const hiss = c.createBiquadFilter();
+			hiss.type = 'bandpass'; hiss.frequency.value = 3800; hiss.Q.value = 0.55;
+			const body = c.createBiquadFilter();
+			body.type = 'lowpass'; body.frequency.value = 620; body.Q.value = 0.6;
+			const gh = c.createGain(); gh.gain.value = 0;
+			const gb = c.createGain(); gb.gain.value = 0;
+			src.connect( hiss ).connect( gh ).connect( this.rainOut );
+			src.connect( body ).connect( gb ).connect( this.rainOut );
+			src.start( now + 0.02, Math.random() * 2 );
+			bed = this._rainBed = { src, gh, gb };
+
+		}
+
+		// a drizzle is almost all hiss; a downpour gains the low roar of all the water it moves.
+		// (Empirical trims: the buffer's noise is not LUFS-normalised like the sampled beds.)
+		this._ramp( bed.gh.gain, 0.09 * Math.pow( level, 0.7 ), 0.8 );
+		this._ramp( bed.gb.gain, 0.13 * Math.pow( level, 1.6 ), 0.8 );
+
+	}
+
+	// amp 0..1.2 (the strike's brightness), rain 0..1: a heavy storm's strikes are closer and sharper
+	thunder( amp = 1, rain = 1 ) {
+
+		if ( ! this.enabled || ! this.ctx || this._failed || ! this.rainOut ) return;
+		const c = this.ctx;
+		const near = clamp( num( rain, 1 ), 0, 1 );
+		// sound travels ~340 m/s: a distant strike arrives seconds after the flash
+		const delay = lerp( 2.6, 0.25, near * near );
+		const dur = lerp( 4.5, 2.2, near );
+		const t = c.currentTime + delay + 0.01;
+		const src = c.createBufferSource();
+		src.buffer = this._noise();
+		src.loop = true;
+		const lp = c.createBiquadFilter();
+		lp.type = 'lowpass';
+		lp.frequency.value = lerp( 150, 900, near ); // air and distance eat the high end
+		lp.Q.value = 0.4;
+		const g = c.createGain();
+		const peak = 0.9 * clamp( num( amp, 1 ), 0, 1.2 ) * lerp( 0.35, 1, near );
+		g.gain.setValueAtTime( 1e-4, t );
+		g.gain.linearRampToValueAtTime( peak, t + lerp( 0.09, 0.02, near ) );
+		g.gain.exponentialRampToValueAtTime( Math.max( peak * 0.3, 2e-4 ), t + 0.35 );
+		g.gain.linearRampToValueAtTime( peak * 0.55, t + 0.55 ); // the rumble swells once more
+		g.gain.exponentialRampToValueAtTime( 1e-4, t + dur );
+		src.connect( lp ).connect( g ).connect( this.rainOut );
+		src.start( t, Math.random() * 2 );
+		src.stop( t + dur + 0.2 );
 
 	}
 
@@ -970,6 +1073,7 @@ export class SoundScape {
 		e.shoreDist = Math.max( 0, num( s.distanceToShore, 60 ) );
 		e.wind = clamp( num( s.windSpeed, 7 ), 0, 40 );
 		e.day = clamp( num( s.daylight, 1 ), 0, 1 );
+		e.rain = clamp( num( s.rain, 0 ), 0, 1 );
 		e.nearPier = !! s.nearPier;
 		e.hour = typeof s.timeOfDay === 'number' && Number.isFinite( s.timeOfDay ) ? ( ( s.timeOfDay % 24 ) + 24 ) % 24 : null;
 		const b = s.boat || EMPTY, bp = b.position || EMPTY, eb = e.boat;
@@ -1067,7 +1171,8 @@ export class SoundScape {
 		const veg = e.onLand ? smooth( 6, 30, d ) : 0;
 		this._bed( 'palms', dB( MIX.palms ) * veg * clamp( e.wind / 7, 0.2, 1.8 ) * g.v * ( 0.3 + 0.7 * e.day ) / dB( BANK.palms.lufs ), now, 0.5 );
 		const night = smooth( 0.3, 0.12, e.day );
-		this._bed( 'crickets', dB( MIX.crickets ) * night * ( e.onLand ? 0.35 + 0.65 * smooth( 5, 40, d ) : 0.1 ) / dB( BANK.crickets.lufs ), now, 1 );
+		// ...but not in the rain: they stop, like the birds and the crabs
+		this._bed( 'crickets', dB( MIX.crickets ) * night * clamp( 1 - 0.8 * e.rain, 0, 1 ) * ( e.onLand ? 0.35 + 0.65 * smooth( 5, 40, d ) : 0.1 ) / dB( BANK.crickets.lufs ), now, 1 );
 
 		// water lapping the pier piles
 		this._bed( 'pier_lap', ( e.nearPier ? dB( MIX.pierLap ) : 0 ) / dB( BANK.pier_lap.lufs ), now, 0.6 );
@@ -1100,11 +1205,22 @@ export class SoundScape {
 	}
 
 	// gulls and terns: each call from a real bird of the wildlife near the listener (the nearer, the
-	// likelier - and louder); without the wildlife, gulls from somewhere over the shore
+	// likelier - and louder); without the wildlife, gulls from somewhere over the shore. They sit out
+	// the rain the same way the birds themselves do (EcoRhythm: they have gone to roost), so the bay
+	// goes quiet well before the rain does.
 	_life( dt ) {
 
 		const e = this.env;
-		if ( e.day < 0.35 || e.u > 0.5 ) return;
+		const drive = clamp( 1 - 1.35 * e.rain, 0, 1 );
+		if ( e.day < 0.35 || e.u > 0.5 || drive < 0.1 ) {
+
+			this._gullT = 12;
+			this._ternT = 12;
+			return;
+
+		}
+
+		const slow = Math.min( 8, 1 / drive ); // pour: a call every couple of minutes at most
 		const flock = this._flock();
 		this._gullT -= dt;
 		if ( this._gullT <= 0 ) {
@@ -1112,7 +1228,7 @@ export class SoundScape {
 			if ( flock ) {
 
 				const a = this._pickBird( flock, 'gull', 170 );
-				this._gullT = a ? 5 + Math.random() * 15 : 3;
+				this._gullT = a ? ( 5 + Math.random() * 15 ) * slow : 3 * slow;
 				if ( a ) {
 
 					const P = a.f.P.pos;
@@ -1122,7 +1238,7 @@ export class SoundScape {
 
 			} else if ( e.shoreDist < 300 ) {
 
-				this._gullT = 7 + Math.random() * 18 + e.shoreDist * 0.05;
+				this._gullT = ( 7 + Math.random() * 18 + e.shoreDist * 0.05 ) * slow;
 				if ( this._want( 'gull' ) ) this._gull();
 
 			}
@@ -1133,7 +1249,7 @@ export class SoundScape {
 		if ( this._ternT <= 0 ) {
 
 			const a = flock ? this._pickBird( flock, 'tern', 190 ) : null;
-			this._ternT = a ? 7 + Math.random() * 18 : 4;
+			this._ternT = a ? ( 7 + Math.random() * 18 ) * slow : 4 * slow;
 			if ( a ) {
 
 				const P = a.f.P.pos;
@@ -1249,13 +1365,15 @@ export class SoundScape {
 		const e = this.env, { act, chorus, lull } = this._birdActivity();
 		const inland = e.onLand ? smooth( 0, 45, e.shoreDist ) : 0;
 		const hab = e.onLand ? 0.25 + 0.75 * inland : 0.25 * ( 1 - smooth( 20, 90, e.shoreDist ) );
+		// rain: the singers sit it out as well - a few still call in a shower, nobody in a downpour
+		const dry = clamp( 1 - 0.85 * e.rain, 0, 1 );
 
 		// the dawn chorus: many birds at once, diffuse; inland at full, from the beach distant, gone at sea
-		const cg = chorus * ( e.onLand ? 0.3 + 0.7 * inland : 0.3 * ( 1 - smooth( 20, 150, e.shoreDist ) ) ) * ( 1 - e.u );
+		const cg = chorus * ( e.onLand ? 0.3 + 0.7 * inland : 0.3 * ( 1 - smooth( 20, 150, e.shoreDist ) ) ) * ( 1 - e.u ) * dry;
 		this._bed( 'birds_dawn', dB( MIX.birdChorus ) * cg / dB( BANK.birds_dawn.lufs ), now, 2 );
 
 		this._birdT -= dt;
-		const rate = act * hab;
+		const rate = act * hab * dry;
 		if ( this._birdT <= 0 ) {
 
 			this._birdT = rate > 0.02 ? ( 4 + Math.random() * 20 ) / rate : 3;

@@ -2,7 +2,7 @@
 import { FISH, FISH_IDS, fishValue, fishLengthCm } from '../src/game/FishTable.js';
 import { habitatAt, pickSpecies, rollWeight, biteDelay } from '../src/game/Bites.js';
 import { CatchMinigame } from '../src/game/CatchMinigame.js';
-import { GameState } from '../src/game/GameState.js';
+import { GameState, SAVE_VERSION, migrate } from '../src/game/GameState.js';
 import { gearStats, defaultUpgrades, UPGRADES } from '../src/game/Gear.js';
 
 let fails = 0;
@@ -169,6 +169,39 @@ ok( Object.keys( defaultUpgrades() ).length === Object.keys( UPGRADES ).length &
 	st.money = 1000;
 	ok( st.buy( 'fuel' ) && st.fuelL === 80, 'a new tank comes full' );
 	ok( st.buy( 'fishFinder' ) && st.stats.finder === true && st.buy( 'fishFinder' ) === null, 'fish finder: one level' );
+
+}
+// ---- save safety: backup, broken saves, newer versions, fuel mid-trip
+{
+
+	const m = new Map();
+	const store = { getItem: ( k ) => m.get( k ) ?? null, setItem: ( k, v ) => m.set( k, v ) };
+	let clock = 0;
+	const st = new GameState( store, () => clock );
+	st.money = 50; st.save();
+	st.money = 80; st.save();
+	ok( JSON.parse( m.get( 'tidewater.save.v1.bak' ) ).money === 50, 'the previous save is kept as a backup' );
+	m.set( 'tidewater.save.v1', '{"v":1,"money":' ); // a write cut short
+	const st2 = new GameState( store );
+	ok( st2.load() && st2.money === 50 && st2.loadedFrom === 'backup', 'a broken save falls back to the backup' );
+	ok( m.get( 'tidewater.save.v1.broken' ) === '{"v":1,"money":', 'the broken save is kept aside, not lost' );
+	ok( JSON.parse( m.get( 'tidewater.save.v1' ) ).money === 50, 'the restored backup becomes the save' );
+
+	const newer = JSON.stringify( { v: SAVE_VERSION + 1, money: 999 } );
+	const m2 = new Map( [ [ 'tidewater.save.v1', newer ] ] );
+	const st3 = new GameState( { getItem: ( k ) => m2.get( k ) ?? null, setItem: ( k, v ) => m2.set( k, v ) } );
+	ok( st3.load() === false && st3.readOnly, 'a save from a newer version is not loaded' );
+	st3.addFish( 'grunt', 0.5 );
+	ok( m2.get( 'tidewater.save.v1' ) === newer, '… and never overwritten' );
+	ok( migrate( { v: SAVE_VERSION, money: 1 } ).money === 1 && migrate( { money: 1 } ) === null && migrate( null ) === null, 'migrate: current saves pass, non-saves are rejected' );
+
+	const m3 = new Map();
+	let t = 0;
+	const fuel = new GameState( { getItem: ( k ) => m3.get( k ) ?? null, setItem: ( k, v ) => m3.set( k, v ) }, () => t );
+	fuel.save();
+	for ( let i = 0; i < 100; i ++ ) { t += 100; fuel.burn( 0.1 ); } // 10 s at the helm, 10 litres
+	const reloaded = new GameState( { getItem: ( k ) => m3.get( k ) ?? null, setItem: () => {} } );
+	ok( reloaded.load() && reloaded.fuelL <= 40 - 4.9, 'fuel burnt at the helm survives a reload' );
 
 }
 console.log( `value check ${ value }` );

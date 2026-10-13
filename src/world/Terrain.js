@@ -39,7 +39,8 @@ export class Terrain {
 		this.lod = new CDLOD( {
 			gridSize, leafSize: 8, levels: 9,
 			heightBounds: ( x0, z0, x1, z1 ) => terrainData.boundsFor( x0, z0, x1, z1 ),
-			center: { x: - half, z: - half, size: terrainData.size },
+			// the home grid is centred on the origin; an outer island's (OuterIsland) sits at x0, z0
+			center: { x: terrainData.x0 ?? - half, z: terrainData.z0 ?? - half, size: terrainData.size },
 			rangeFactor,
 			prefix: 'terrainLod',
 		} );

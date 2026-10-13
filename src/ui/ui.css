@@ -23,7 +23,7 @@
 	--tw-line: rgba(170, 215, 235, 0.12);
 	--tw-line-2: rgba(170, 215, 235, 0.2);
 
-	--tw-font: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+	--tw-font: 'Inter', 'Noto Sans SC', system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', Roboto, sans-serif;
 	--tw-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 
 	--tw-ease: cubic-bezier(0.2, 0.8, 0.2, 1);

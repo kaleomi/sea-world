@@ -5,13 +5,14 @@ import { FISH } from './FishTable.js';
 // fastest. Too much tension (above the line's strength for about half a second) snaps it; too little
 // for too long and the hook falls out. Every few seconds the fish surges: ease off or it breaks you.
 //
-//   const g = new CatchMinigame( { species, kg, lineKg, reelSpeed, distance, rng } )
+//   const g = new CatchMinigame( { species, kg, lineKg, reelSpeed, distance, rng, staminaMul, powerMul } )
+//   (staminaMul, powerMul: a legend fights longer and harder than its size alone would; see Legends.js)
 //   g.update( dt, reeling ) -> 'fighting' | 'caught' | 'snapped' | 'escaped'
 //   g.tension (0..1+, 1 = breaking point), g.distance (m), g.stamina (0..1), g.surge (0..1),
 //   g.band = [ lo, hi ] (the green band)
 export class CatchMinigame {
 
-	constructor( { species, kg, lineKg = 7, reelSpeed = 1.1, distance = 15, rng = Math.random } ) {
+	constructor( { species, kg, lineKg = 7, reelSpeed = 1.1, distance = 15, rng = Math.random, staminaMul = 1, powerMul = 1 } ) {
 
 		const f = FISH[ species ];
 		this.species = species;
@@ -19,8 +20,8 @@ export class CatchMinigame {
 		this.rng = rng;
 		this.reelSpeed = reelSpeed;
 		// pull relative to the line: a fish near the line rating is hard, one far above it is a lottery
-		this.power = Math.min( 2.2, ( 0.25 + 0.75 * f.fight ) * Math.pow( kg / Math.max( lineKg * 0.5, 0.2 ), 0.55 ) );
-		this.staminaMax = f.stamina * Math.pow( Math.max( kg / f.kg[ 1 ], 0.15 ), 0.35 );
+		this.power = Math.min( 2.2, ( 0.25 + 0.75 * f.fight ) * Math.pow( kg / Math.max( lineKg * 0.5, 0.2 ), 0.55 ) * powerMul );
+		this.staminaMax = f.stamina * Math.pow( Math.max( kg / f.kg[ 1 ], 0.15 ), 0.35 ) * staminaMul;
 		this.stamina = 1;
 		this.distance = distance;
 		this.maxDistance = Math.max( 60, distance + 40 ); // spooled: the fish takes all the line

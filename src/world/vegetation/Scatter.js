@@ -240,7 +240,7 @@ export class VegSite {
 }
 
 // Spatial hash of placed plants for minimum-distance tests across types.
-class Occupancy {
+export class Occupancy {
 
 	constructor( cell = 4 ) {
 
@@ -291,10 +291,10 @@ class Occupancy {
 
 }
 
-const KIND = { PALM: 1, TREE: 2, BANANA: 3, SHRUB: 4, YOUNG: 5, FERN: 6, BROAD: 7 };
+export const KIND = { PALM: 1, TREE: 2, BANANA: 3, SHRUB: 4, YOUNG: 5, FERN: 6, BROAD: 7 };
 
 // Jittered-grid dart throwing over a rectangle.
-function scatter( rand, x0, z0, x1, z1, step, fn ) {
+export function scatter( rand, x0, z0, x1, z1, step, fn ) {
 
 	for ( let z = z0; z < z1; z += step ) {
 

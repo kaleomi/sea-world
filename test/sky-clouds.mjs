@@ -16,6 +16,7 @@ const sky = new Sky( atmosphere );
 const clouds = new Clouds( null, atmosphere );
 clouds.outputSize = { x: W, y: H };
 if ( ! process.env.NOCLOUDS ) sky.clouds = clouds;
+if ( process.env.COVER ) clouds.coverage.value = Number( process.env.COVER );
 if ( process.env.DENS ) clouds.densityScale.value = Number( process.env.DENS );
 if ( process.env.CIRRUS ) clouds.cirrus.value = Number( process.env.CIRRUS );
 const scene = new E.Scene();

@@ -1,5 +1,6 @@
 import * as THREE from '../../engine/index.js';
 import { G } from '../../core/Globals.js';
+import { RHYTHM } from '../EcoRhythm.js';
 import { WORLD } from '../WorldLayout.js';
 import { mulberry32 } from '../../util/Noise.js';
 import { BIRD } from './BirdShapes.js';
@@ -89,11 +90,13 @@ export class Shorebirds {
 
 	}
 
-	update( dt, viewer, batch, camera, blobs = null ) {
+	// eco: the shared day/night + weather reading (EcoRhythm). Sampled here if nobody passed one.
+	update( dt, viewer, batch, camera, blobs = null, eco = RHYTHM.sample() ) {
 
 		this.time += dt;
 		const cp = camera.position;
-		const night = G.night.value;
+		// roosting: night, or rain. They come off the swash either way.
+		const night = eco.shore;
 		for ( const F of this.flocks ) {
 
 			// nothing to do while nobody is anywhere near

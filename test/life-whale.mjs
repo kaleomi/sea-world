@@ -7,8 +7,9 @@ import * as E from '../src/engine/index.js';
 
 const OUT = process.argv[ 2 ] || '/tmp';
 const W = + ( process.env.W || 2560 ), H = + ( process.env.H || 1267 );
-// local files through fetch (the browser path of Whale.load / loadTexture)
-const ROOT = new URL( '../public', import.meta.url ).pathname;
+// local files through fetch (the browser path of Whale.load / loadTexture). On Windows the URL
+// pathname comes out with a leading slash (/E:/...); readFileSync would turn that into E:\E:\...
+const ROOT = new URL( '../public', import.meta.url ).pathname.replace( /^\/([A-Za-z]:)/, '$1' );
 globalThis.fetch = async ( url ) => {
 
 	const buf = readFileSync( ROOT + url );

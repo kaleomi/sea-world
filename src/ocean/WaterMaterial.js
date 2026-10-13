@@ -1,6 +1,7 @@
 import { Material, ShaderModule, G } from '../engine/webgpu.js';
 import { commonModule } from '../engine/render/wgsl/common.js';
 import { whaleWaterModule } from './WhaleWater.js';
+import { rainRippleModule } from '../weather/RainRipples.js';
 import { REFRACTION_GUARD } from './RefractionPass.js';
 
 const IOR = 1.333;
@@ -160,7 +161,7 @@ export class WaterMaterial extends Material {
 		const HULL = !! ( this.hullMaskTexture && this.hullMaskActive );
 		const REFL = !! ( this.reflection && this.reflection.module );
 
-		this.modules = [ commonModule, waterFresnelModule, waterHelpersModule, whaleWaterModule, S.module, sky && sky.module, CL && this.clouds.module,
+		this.modules = [ commonModule, waterFresnelModule, waterHelpersModule, whaleWaterModule, rainRippleModule, S.module, sky && sky.module, CL && this.clouds.module,
 			SIM && S.shoreSim.module, REFL && this.reflection.module, this.cameraWaterHeightNode && this.cameraWaterHeightNode.module ].filter( Boolean );
 		this.bindings.waterSceneColor = { texture: this.sceneColorTexture };
 		this.bindings.waterSceneDepth = { texture: this.sceneDepthTexture, sampleType: 'unfilterable-float' };
@@ -283,6 +284,25 @@ ${ hasClip ? `	if ( swRt > 0.0 && vDepth < 0.4 ) {
 	let whaleW = whaleWater( pos.xz );
 	foam = max( foam, whaleW.x );
 
+	// ---- rain striking the surface (frame.weather.x). Close up the rings of individual drops are
+	// bigger than a pixel and tilt the normal; past a few tens of metres they are smaller than one, so
+	// they stop being drawn and only raise the unresolved roughness (mss, below), which is what that
+	// distance actually looks like. Nothing is computed at all when it is not raining.
+	var rainSlope = vec2f( 0.0 );
+	let rain = frame.weather.x;
+	if ( rain > 0.01 ) {
+
+		if ( footprint < 0.32 ) {
+
+			let rr = rainRipples( pos.xz, frame.time );
+			let resolved = rain * smoothstep( 0.32, 0.12, footprint );
+			rainSlope = rr.slope * resolved;
+			foam += rr.foam * resolved * 0.45; // the crown of bubbles where a drop has just gone in
+
+		}
+
+	}
+
 	// Which medium is the view ray in before it reaches this fragment? The water surface is a closed
 	// interface: a front face (its air side towards the camera) is seen from the air, a back face from
 	// the water. For the visible (nearest) fragment this is the medium the ray starts in at the near
@@ -298,12 +318,13 @@ ${ SH ? '	let folded = surf.jacobian < 0.1 || normalize( in.vs.vShoreN ).y < 0.3
 	// (tiny self-intersections of the choppy FFT surface render as back faces seen from above),
 	// so pick the side from the camera and bend facets that face away to grazing instead of
 	// flipping them (a flipped normal turns a fold into a white sky-mirror patch).
-	let Nup = normalize( mix( surf.normal, vec3f( 0.0, 1.0, 0.0 ), whaleW.y * 0.75 ) );
+	let Nup = normalize( mix( surf.normal, vec3f( 0.0, 1.0, 0.0 ), whaleW.y * 0.75 ) + vec3f( - rainSlope.x, 0.0, - rainSlope.y ) );
 	let Nside = select( Nup, - Nup, viewFromBelow );
 	let Nview = normalize( Nside + V * max( - dot( Nside, V ) + 0.03, 0.0 ) );
 
-	// roughness from unresolved slope variance (Cox-Munk: mss = 0.003 + 0.00512 U)
-	let mss = ( 0.003 + frame.windSpeed * 0.00512 ) * waterSurface.slopeScale;
+	// roughness from unresolved slope variance (Cox-Munk: mss = 0.003 + 0.00512 U), plus the short
+	// waves the rain is raising everywhere (the rings too small to draw still scatter the light)
+	let mss = ( 0.003 + frame.windSpeed * 0.00512 + rain * 0.0045 ) * waterSurface.slopeScale;
 	let kpx = PI / footprint;
 	let unresolved = sat( log2( 110.0 / kpx ) / 9.0 );
 	let roughVar = surf.rough * surf.rough;

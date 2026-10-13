@@ -1,5 +1,6 @@
 import * as THREE from '../engine/index.js';
 import { WORLD } from '../world/WorldLayout.js';
+import { G } from '../core/Globals.js';
 import { HOUSE } from '../world/boat/Wheelhouse.js';
 
 const HOUSE_HELM = { x: HOUSE.helmX, z: HOUSE.seatZ };
@@ -8,6 +9,7 @@ const EYE = 1.62;
 const SWIM_EYE = EYE * 0.1; // eyes above the body's float point while swimming
 const RADIUS = 0.3;
 const HEIGHT = 1.75;
+const ANCHOR_DEPTH = 30; // m of water the boat's anchor reaches
 // water depth (mean level over the feet) where you start swimming / find your feet again
 const SWIM_DEPTH = 1.35;
 const STAND_DEPTH = 1.1;
@@ -57,7 +59,7 @@ export class Player {
 		this.grounded = false;
 		this.bob = 0;
 		this.stepDist = 0;
-		this.waterH = 0;
+		this.waterH = G.seaLevel.value;
 		this.waterMean = null; // water level low-passed over the passing waves (mode decisions)
 		this.wade = 0;
 		// eye height easing between modes (critically damped offset from the mode's eye height)
@@ -65,7 +67,7 @@ export class Player {
 		this.camOffV = 0;
 		this._camY = null;
 		this.floating = true; // swimming at the surface (riding the waves) vs. free under water
-		this.slot = query.allocate( 'player', 1 );
+		this.slot = query ? query.allocate( 'player', 1 ) : - 1;
 		this.prompt = null;
 		this.surface = 'sand';
 
@@ -103,9 +105,9 @@ export class Player {
 	waterHeight() {
 
 		const q = this.query;
-		if ( ! q.cpuValid ) return 0;
+		if ( ! q || ! q.cpuValid ) return G.seaLevel.value;
 		const h = q.cpu[ this.slot * 4 ];
-		return Number.isFinite( h ) ? h : this.waterH || 0;
+		return Number.isFinite( h ) ? h : G.seaLevel.value;
 
 	}
 
@@ -134,7 +136,7 @@ export class Player {
 	update( dt ) {
 
 		const inp = this.input;
-		this.query.setPoint( this.slot, this.position.x, this.position.z );
+		if ( this.query ) this.query.setPoint( this.slot, this.position.x, this.position.z );
 		this.waterH = this.waterHeight();
 		this.waterMean = this.waterMean === null ? this.waterH : this.waterMean + ( this.waterH - this.waterMean ) * ( 1 - Math.exp( - dt / 4 ) );
 		this.prompt = null;
@@ -290,7 +292,7 @@ export class Player {
 		const onWood = this.colliders.groundHeightAt( p.x, p.z, p.y + 0.1 ) > this.terrain.heightAt( p.x, p.z ) + 0.05;
 		if ( onWood ) return 'wood';
 		const h = this.terrain.heightAt( p.x, p.z );
-		if ( h < 0.6 ) return 'wetsand';
+		if ( h - G.seaLevel.value < 0.6 ) return 'wetsand';
 		if ( h > 3.6 ) return 'grass';
 		return 'sand';
 
@@ -436,6 +438,7 @@ export class Player {
 		this.mode = 'boat';
 		this.boat.driven = true;
 		this.boat.moored = false;
+		this.boat.anchored = false;
 		this.helmYaw = 0;
 		this.helmPitch = - 0.05;
 		this.orbitYaw = this.boat.getYaw() + Math.PI;
@@ -480,10 +483,15 @@ export class Player {
 		// the exit point closest to something walkable (pier deck / sand)
 		let best = side ? null : this.ashoreTarget();
 
+		// moored at the home dock; anywhere else (the other islands, a reef) the anchor goes down
+		// where it can reach the bottom, so the boat waits there
 		const dock = WORLD.boatDock.position;
-		if ( b.position.distanceTo( dock ) < 14 && b.speed < 1.5 ) {
+		const atDock = b.position.distanceTo( dock ) < 14;
+		const depth = - this.terrain.heightAt( b.position.x, b.position.z );
+		if ( b.speed < 1.5 && ( atDock || depth < ANCHOR_DEPTH ) ) {
 
 			b.moored = true;
+			b.anchored = ! atDock;
 			b.mooring.anchor.set( b.position.x, 0, b.position.z );
 			b.mooring.heading = b.getYaw();
 
@@ -519,7 +527,8 @@ export class Player {
 	ashoreTarget() {
 
 		const b = this.boat;
-		const water = this.query.cpuValid ? this.query.cpu[ 0 ] : 0;
+		const waterH = this.query && this.query.cpuValid ? this.query.cpu[ 0 ] : NaN;
+		const water = Number.isFinite( waterH ) ? waterH : G.seaLevel.value;
 		// the boat's starboard (local +x) direction in the world, level
 		const sx = _v2.set( 1, 0, 0 ).applyQuaternion( b.quaternion ).setY( 0 ).normalize();
 		const rx = sx.x, rz = sx.z;
