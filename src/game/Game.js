@@ -49,6 +49,8 @@ export class Game {
 		this.chandlery = new Chandlery( { scene: app.scene, terrain: app.terrainData, colliders: app.colliders, material: this.stand.material } );
 		this.vendors = [ this.stand.vendor, this.chandlery.vendor ];
 		this.addQuestGivers();
+		// cruise control at the helm (Player.updateBoat, C)
+		if ( app.player ) app.player.onCruise = ( c ) => this.toast( c ? t( 'Cruise control on · C or S to stop' ) : t( 'Cruise control off' ), 1800 );
 		// boat upgrades: engine (thrust / top speed) and deck floodlights for night fishing
 		const b = app.boatCtl;
 		this._engineBase = { maxThrust: b.maxThrust, pitchSpeed: b.pitchSpeed };
@@ -482,6 +484,7 @@ export class Game {
 			if ( left <= 0 ) {
 
 				b.throttle = 0;
+				p.cruise = 0;
 				if ( ! this._fuelOut ) this.toast( 'Out of fuel · buy diesel at the chandlery by the boathouse', 4000 );
 				this._fuelOut = true;
 

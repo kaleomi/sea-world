@@ -2150,7 +2150,7 @@ export class UI {
 						${ row( mouse, t( 'Look around<small>Click to capture</small>' ) ) }
 						${ row( k( 'Shift' ), t( 'Sprint, boat boost' ) ) }
 						${ row( k( 'Space' ), t( 'Jump, swim up' ) ) }
-						${ row( k( 'C' ), t( 'Crouch, dive' ) ) }
+						${ row( k( 'C' ), t( 'Crouch, dive<small>At the helm: cruise control</small>' ) ) }
 					</section>
 					<section>
 						<h3>${ t( 'Interact' ) }</h3>

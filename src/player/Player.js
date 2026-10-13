@@ -34,6 +34,25 @@ const HELM_REACH = 0.75; // m from the helm seat to take the wheel
 //   deck : aboard, walking in the boat's frame (it moves and rocks under you); E at the helm
 //          takes the wheel, E near a pier / the beach steps ashore
 //   boat : at the helm, driving; V toggles helm (1st person) / chase (3rd person) camera, E stands up
+// The throttle at the helm: W ahead (Shift: full), S astern. Cruise control (C) holds the throttle so W
+// can be let go: full if Shift is down or the boat is already near full, otherwise cruising speed; W +
+// Shift still boosts over it, and S or C again turns it off.
+//   helmThrottle( cruise, { w, s, c, boost }, lever ) -> { throttle, cruise }   (cruise 0 = off)
+export function helmThrottle( cruise, keys, lever = 0 ) {
+
+	let throttle = keys.w ? ( keys.boost ? 1 : 0.7 ) : 0;
+	if ( keys.c ) cruise = cruise ? 0 : ( keys.boost || lever > 0.85 ? 1 : 0.7 );
+	if ( keys.s ) {
+
+		cruise = 0;
+		throttle = - 0.6;
+
+	} else if ( cruise ) throttle = Math.max( throttle, cruise );
+
+	return { throttle, cruise };
+
+}
+
 export class Player {
 
 	constructor( { camera, input, terrain, colliders, query, boat, reef = null, audio = null } ) {
@@ -49,6 +68,8 @@ export class Player {
 
 		this.mode = 'walk';
 		this.camMode = 'third';
+		// cruise control at the helm (C): the throttle the boat holds without W pressed, 0 = off
+		this.cruise = 0;
 		const start = WORLD.start || WORLD.spawn;
 		this.position = new THREE.Vector3().copy( start.position );
 		// standing on whatever is there (the boardwalk planks), not in it
@@ -453,6 +474,7 @@ export class Player {
 		const b = this.boat;
 		b.driven = false;
 		b.throttle = 0;
+		this.cruise = 0;
 		this.mode = 'deck';
 		this.deckPos.set( HOUSE_HELM.x + 0.45, b.model.lines.deckY, HOUSE_HELM.z - 0.1 );
 		this.deckVel.set( 0, 0, 0 );
@@ -480,6 +502,7 @@ export class Player {
 		const wasDriving = b.driven;
 		b.driven = false;
 		b.throttle = 0;
+		this.cruise = 0;
 		// the exit point closest to something walkable (pier deck / sand)
 		let best = side ? null : this.ashoreTarget();
 
@@ -749,14 +772,23 @@ export class Player {
 
 		}
 
-		let throttle = 0;
-		if ( inp.down( 'KeyW' ) ) throttle = inp.down( 'ShiftLeft' ) ? 1 : 0.7;
-		if ( inp.down( 'KeyS' ) ) throttle = - 0.6;
+		const h = helmThrottle( this.cruise, {
+			w: inp.down( 'KeyW' ), s: inp.down( 'KeyS' ), c: inp.hit( 'KeyC' ), boost: inp.down( 'ShiftLeft' ) || inp.down( 'ShiftRight' ),
+		}, b.throttle );
+		if ( h.cruise !== this.cruise ) {
+
+			this.cruise = h.cruise;
+			if ( this.onCruise ) this.onCruise( h.cruise );
+
+		}
+
+		const throttle = h.throttle;
+
 		let steer = 0;
 		if ( inp.down( 'KeyA' ) ) steer += 1;
 		if ( inp.down( 'KeyD' ) ) steer -= 1;
 		b.setInput( throttle, steer, dt );
-		this.prompt = { key: 'E', text: 'Leave helm   ·   V  camera' };
+		this.prompt = { key: 'E', text: this.cruise ? 'Leave helm   ·   C  cruise off   ·   S  brake' : 'Leave helm   ·   C  cruise   ·   V  camera' };
 
 		// keep the player attached (for audio / queries)
 		b.toWorld( b.model.helmEye, this.position );

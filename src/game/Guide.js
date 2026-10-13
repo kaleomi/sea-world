@@ -109,7 +109,7 @@ const TIPS = {
 	fishOn: t( '<b>Hold the left mouse button</b> to reel. When the tension needle nears the <b>red</b>, let go until it settles, then reel again.' ),
 	caught: t( 'Into the cooler (<kbd>I</kbd>). Sell your catch to <b>Joe</b> at the fish stand by the pier: he is on the map.' ),
 	full: t( 'Your cooler is <b>full</b>. Sell to Joe, or buy a bigger hold from Marta at the chandlery.' ),
-	boat: t( 'Your boat. <kbd>E</kbd> to board, <kbd>E</kbd> again at the wheel to drive (<kbd>W</kbd><kbd>S</kbd> throttle, <kbd>A</kbd><kbd>D</kbd> steer). Diesel is sold by Marta.' ),
+	boat: t( 'Your boat. <kbd>E</kbd> to board, <kbd>E</kbd> again at the wheel to drive (<kbd>W</kbd><kbd>S</kbd> throttle, <kbd>A</kbd><kbd>D</kbd> steer, <kbd>C</kbd> cruise control). Diesel is sold by Marta.' ),
 	joe: t( '<b>Joe</b> buys your fish. <kbd>E</kbd> to see what he will pay.' ),
 	marta: t( '<b>Marta</b> sells upgrades and diesel. <kbd>E</kbd> to see her stock.' ),
 };

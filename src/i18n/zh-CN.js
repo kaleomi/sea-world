@@ -288,6 +288,7 @@ export const ZH_CN = {
 	'Sprint, boat boost': '冲刺，船只加速',
 	'Jump, swim up': '跳跃，上浮',
 	'Crouch, dive': '下蹲，下潜',
+	'Crouch, dive<small>At the helm: cruise control</small>': '下蹲，下潜<small>掌舵时：定速巡航</small>',
 	'Interact<small>Board, helm, step ashore, trade</small>': '交互<small>登船、掌舵、上岸、交易</small>',
 	'Boat camera<small>1st / 3rd person</small>': '船载视角<small>第一 / 第三人称</small>',
 	'Fishing rod<small>Take out / put away</small>': '钓竿<small>取出 / 收起</small>',
@@ -343,8 +344,8 @@ export const ZH_CN = {
 		'已放进鱼箱（<kbd>I</kbd>）。把渔获卖给栈桥边鱼摊的<b>乔</b>，地图上有他的标记。',
 	'Your cooler is <b>full</b>. Sell to Joe, or buy a bigger hold from Marta at the chandlery.':
 		'鱼箱<b>满了</b>。卖给乔，或者去船具店找玛尔塔买个更大的鱼舱。',
-	'Your boat. <kbd>E</kbd> to board, <kbd>E</kbd> again at the wheel to drive (<kbd>W</kbd><kbd>S</kbd> throttle, <kbd>A</kbd><kbd>D</kbd> steer). Diesel is sold by Marta.':
-		'你的船。<kbd>E</kbd> 登船，走到舵轮前再按 <kbd>E</kbd> 开船（<kbd>W</kbd><kbd>S</kbd> 控制油门，<kbd>A</kbd><kbd>D</kbd> 转向）。柴油在玛尔塔那里买。',
+	'Your boat. <kbd>E</kbd> to board, <kbd>E</kbd> again at the wheel to drive (<kbd>W</kbd><kbd>S</kbd> throttle, <kbd>A</kbd><kbd>D</kbd> steer, <kbd>C</kbd> cruise control). Diesel is sold by Marta.':
+		'你的船。<kbd>E</kbd> 登船，走到舵轮前再按 <kbd>E</kbd> 开船（<kbd>W</kbd><kbd>S</kbd> 控制油门，<kbd>A</kbd><kbd>D</kbd> 转向，<kbd>C</kbd> 定速巡航）。柴油在玛尔塔那里买。',
 	'<b>Joe</b> buys your fish. <kbd>E</kbd> to see what he will pay.': '<b>乔</b>收购你的鱼。<kbd>E</kbd> 看看他出什么价。',
 	'<b>Marta</b> sells upgrades and diesel. <kbd>E</kbd> to see her stock.': '<b>玛尔塔</b>出售升级件和柴油。<kbd>E</kbd> 看看她的货。',
 
@@ -798,6 +799,10 @@ export const ZH_CN = {
 	'Step ashore': '上岸',
 	'Jump overboard': '跳下船',
 	'Leave helm   ·   V  camera': '离开舵位   ·   V  切换视角',
+	'Leave helm   ·   C  cruise   ·   V  camera': '离开舵位   ·   C  定速巡航   ·   V  切换视角',
+	'Leave helm   ·   C  cruise off   ·   S  brake': '离开舵位   ·   C  取消巡航   ·   S  刹车',
+	'Cruise control on · C or S to stop': '定速巡航已开启 · 按 C 或 S 停止',
+	'Cruise control off': '定速巡航已关闭',
 
 	// 画质预设和显卡出错（core/Quality.js, main.js）
 	'Graphics': '画质',
