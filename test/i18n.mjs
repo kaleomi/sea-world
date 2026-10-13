@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { t, getLocale, setLocale, has, LOCALES } from '../src/i18n/index.js';
 import { ZH_CN } from '../src/i18n/zh-CN.js';
+import { BOATS } from '../src/game/Boats.js';
 import { FISH } from '../src/game/FishTable.js';
 import { UPGRADES } from '../src/game/Gear.js';
 import { WEATHER, WEATHER_IDS } from '../src/weather/WeatherState.js';
@@ -70,12 +71,14 @@ const missingFish = Object.values( FISH ).map( ( f ) => f.name ).filter( ( n ) =
 ok( missingFish.length === 0, `every fish species is translated${ missingFish.length ? ` (missing: ${ missingFish.join( ', ' ) })` : '' }` );
 
 const gearNames = [];
-for ( const track of Object.values( UPGRADES ) ) {
+for ( const track of [ ...Object.values( UPGRADES ), ...Object.values( BOATS ).flatMap( ( b ) => Object.values( b.tracks ) ) ] ) {
 
 	gearNames.push( track.name );
 	for ( const lv of track.levels ) gearNames.push( lv.label );
 
 }
+
+for ( const b of Object.values( BOATS ) ) gearNames.push( b.name, b.blurb );
 
 const missingGear = gearNames.filter( ( n ) => ! has( n ) );
 ok( missingGear.length === 0, `every gear track and level is translated${ missingGear.length ? ` (missing: ${ missingGear.join( ', ' ) })` : '' }` );

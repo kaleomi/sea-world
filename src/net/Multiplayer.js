@@ -1,7 +1,6 @@
 import { NetClient, errorText } from './NetClient.js';
 import { RemotePlayers } from './RemotePlayers.js';
 import { DEFAULT_PORT, AVATARS, cleanName, cleanAvatar } from './Protocol.js';
-import { HOUSE } from '../world/boat/Wheelhouse.js';
 import { FISH } from '../game/FishTable.js';
 import { LEGENDS } from '../game/Legends.js';
 import { CatchDisplay } from '../game/CatchDisplay.js';
@@ -295,9 +294,10 @@ export class Multiplayer {
 			yaw: Math.atan2( - e[ 8 ], - e[ 10 ] ),
 			b: [ g.position.x, g.position.y, g.position.z, g.quaternion.x, g.quaternion.y, g.quaternion.z, g.quaternion.w ],
 			bh: g.position.y - app.boatCtl.waterLevel,
+			bt: app.boat.type,
 		};
 		if ( p.mode === 'deck' ) s.l = [ p.deckPos.x, p.deckPos.y, p.deckPos.z ];
-		else if ( p.mode === 'boat' ) s.l = [ HOUSE.helmX, app.boat.lines.deckY, HOUSE.seatZ ];
+		else if ( p.mode === 'boat' ) s.l = [ app.boat.helmSeat.x, app.boat.lines.deckY, app.boat.helmSeat.z ];
 		// the rod, and where the line ends
 		const rod = app.game.rod;
 		const r = rod.equipped ? ROD_CODE[ rod.state ] ?? 1 : 0;

@@ -150,7 +150,7 @@ if ( view === 'dex' ) {
 	h.renderInventory();
 
 }
-if ( view === 'shop' ) { state.buy( 'reel' ); h.openStand( { kind: 'shop', name: 'Marta · Chandlery', greeting: 'Line, reels, a bigger hold, diesel. What do you need?' } ); }
+if ( view === 'shop' ) { state.giveBoat( 'workboat' ); state.money = 2400; state.buy( 'reel' ); h.openStand( { kind: 'shop', name: 'Marta · Chandlery', greeting: 'Line, reels, a bigger hold, diesel. What do you need?' } ); }
 if ( view === 'stand' ) h.openStand( { name: 'Joe · Fish buyer', greeting: 'Let\'s see what you caught. Fair prices, cash.' } );
 if ( view === 'fight' ) ui.toast( 'Fish on!' );
 // ?view=start: the start screen with the name and avatar; ?view=chat: the chat log, its line open

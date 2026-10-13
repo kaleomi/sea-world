@@ -1,5 +1,7 @@
 import { Group, Mesh, Matrix4, Quaternion, Vector3 } from '../engine/index.js';
 import { buildFigure } from '../game/Vendor.js';
+import { BoatModel } from '../world/BoatModel.js';
+import { LAYERS } from '../engine/render/SceneRenderer.js';
 
 // The other players on the shared sea (net/NetClient.js): each one's boat and figure, and a name over
 // their head. Their boat is a copy of ours (same geometry and materials, so no new pipelines), set on
@@ -79,12 +81,30 @@ export class RemotePlayers {
 
 	}
 
-	// a copy of our boat's hull, house and gear (only the boat's own parts, not what the game hung on it)
-	_cloneBoat() {
+	// a copy of a boat of their type: hull, house and gear (only the boat's own parts, not what the game
+	// hung on it). The templates are built once per type and never shown or rebuilt (ours changes with
+	// our boat, so it can't be one).
+	_cloneBoat( type = 'workboat' ) {
+
+		this._templates ||= {};
+		let src = this._templates[ type ];
+		if ( ! src ) {
+
+			// set up like our boat in the scene: lite underwater lighting, glass in the late pass
+			src = this._templates[ type ] = new BoatModel( type );
+			src.group.traverse( ( o ) => {
+
+				if ( o.material ) o.material.underwaterLighting = 'lite';
+				if ( o.name === 'boat-glass' || o.name === 'boat-trap' ) o.layers.set( LAYERS.TRANSPARENT );
+
+			} );
+
+		}
 
 		const g = new Group();
 		g.name = 'RemoteBoat';
-		for ( const c of this.boat.group.children ) if ( c.name.startsWith( 'boat-' ) ) g.add( c.clone( true ) );
+		g.userData.type = src.type;
+		for ( const c of src.group.children ) if ( c.name.startsWith( 'boat-' ) ) g.add( c.clone( true ) );
 		g.position.set( 0, - 1000, 0 );
 		return g;
 
@@ -93,7 +113,7 @@ export class RemotePlayers {
 	_add( peer ) {
 
 		if ( this.views.has( peer.id ) ) return;
-		const boat = this._cloneBoat();
+		const boat = this._cloneBoat( 'workboat' );
 		let radar = null;
 		boat.traverse( ( o ) => { if ( o.name === 'boat-radar' ) radar = o; } );
 		// the figure: the stand-in until their avatar has loaded
@@ -148,6 +168,20 @@ export class RemotePlayers {
 			} ).catch( ( e ) => console.warn( 'RemotePlayers: avatar failed to load', e ) );
 
 		}
+
+	}
+
+	_swapBoat( v, type ) {
+
+		const boat = this._cloneBoat( type );
+		if ( boat.userData.type === v.boat.userData.type ) return;
+		this.scene.remove( v.boat );
+		if ( v.mask && this.sceneRenderer ) this.sceneRenderer.removeHullMask( v.mask );
+		v.boat = boat;
+		v.radar = null;
+		boat.traverse( ( o ) => { if ( o.name === 'boat-radar' ) v.radar = o; } );
+		this.scene.add( boat );
+		if ( this.sceneRenderer ) v.mask = this.sceneRenderer.addHullMask( this._hull ||= this.boat.createHullVolumeGeometry(), boat );
 
 	}
 
@@ -232,7 +266,8 @@ export class RemotePlayers {
 
 			}
 
-			// ---- their boat, on our water
+			// ---- their boat, on our water (a new one when they've changed boats)
+			if ( s.bt && s.bt !== v.boat.userData.type ) this._swapBoat( v, s.bt );
 			const B = v.boat;
 			if ( s.b ) {
 

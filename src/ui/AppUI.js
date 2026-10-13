@@ -8,6 +8,7 @@ import { GroundBounce } from '../materials/GroundBounce.js';
 import { getLocale, setLocale, LOCALES, t } from '../i18n/index.js';
 import { DEV } from '../core/DevMode.js';
 import { FISH, FISH_IDS } from '../game/FishTable.js';
+import { BOATS, BOAT_IDS } from '../game/Boats.js';
 
 // Binds the Tidewater UI (panel + HUD) to the running app.
 const SEA = {
@@ -392,6 +393,13 @@ export class AppUI {
 
 		};
 		for ( const n of [ 100, 1000, 10000, 100000 ] ) cash.addButton( { label: `+$${ n.toLocaleString( 'en-US' ) }`, onClick: () => give( n ) } );
+		// any boat, free, and straight into it (Boats.js)
+		const fleet = devTab.addFolder( 'Boats', { icon: 'boat' } );
+		for ( const id of BOAT_IDS ) fleet.addButton( { label: BOATS[ id ].name, onClick: () => {
+
+			if ( app.game && app.game.state.giveBoat( id ) ) ui.toast( t( 'Now using the {boat}', { boat: t( BOATS[ id ].name ) } ) );
+
+		} } );
 		const fishing = devTab.addFolder( 'Fishing', { icon: 'fish' } );
 		s.devFish = '';
 		s.devFishKeep = false;

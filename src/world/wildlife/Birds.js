@@ -148,10 +148,10 @@ export class Birds {
 
 		}
 
-		// the moored boat's wheelhouse roof (follows the boat)
+		// the moored boat's wheelhouse roof, bow pulpit or arch (follows the boat; a new boat moves it)
 		if ( this.boat && this.boatModel && this.boatModel.dimensions ) {
 
-			const local = new THREE.Vector3( - 0.5, this.boatModel.dimensions.houseRoofHeight, 0.15 );
+			const local = this.boatPerch = this.boatModel.perch ? this.boatModel.perch.clone() : new THREE.Vector3( - 0.5, this.boatModel.dimensions.houseRoofHeight, 0.15 );
 			add( 0, 0, 0, 'boat', [ 'gull' ], { local } );
 
 		}

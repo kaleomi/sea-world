@@ -31,6 +31,7 @@ import { Colliders } from './world/Colliders.js';
 import { Village } from './world/Village.js';
 import { Reef } from './world/Reef.js';
 import { BoatModel } from './world/BoatModel.js';
+import { savedBoat } from './game/GameState.js';
 import { Rocks } from './world/Rocks.js';
 import { Debris } from './world/Debris.js';
 import { Wildlife } from './world/wildlife/Wildlife.js';
@@ -47,7 +48,7 @@ import { Caustics } from './ocean/Caustics.js';
 import { installUnderwaterLighting } from './ocean/UnderwaterLighting.js';
 import { RefractionPass } from './ocean/RefractionPass.js';
 import { installGroundBounce } from './materials/GroundBounce.js';
-import { LocalLights, addVillageLights, addBoatLights } from './materials/LocalLights.js';
+import { LocalLights, addVillageLights, addBoatLights, placeBoatLights } from './materials/LocalLights.js';
 import { WaterQuery } from './ocean/WaterQuery.js';
 import { Breakers } from './ocean/Breakers.js';
 import { SurfFoam } from './ocean/SurfFoam.js';
@@ -202,7 +203,8 @@ export class App {
 		await progress( 0.23, t( 'Growing the reef…' ) );
 		this.reef = new Reef( { scene, terrain: this.terrainData, shoreField: this.shoreField } );
 
-		this.boat = new BoatModel();
+		// the boat you were using last (game/Boats.js; Game swaps it when you change boats)
+		this.boat = new BoatModel( savedBoat() );
 		scene.add( this.boat.group );
 		this.boat.group.position.copy( WORLD.boatDock.position );
 		this.boat.group.rotation.y = WORLD.boatDock.heading;
@@ -279,7 +281,7 @@ fn terrainWetness( xz: vec2f, h: f32 ) -> vec2f {
 		// flashlight (L): nearest few packed into one small uniform array each frame
 		this.localLights = new LocalLights();
 		addVillageLights( this.localLights, this.village );
-		addBoatLights( this.localLights, this.boat );
+		this.boatLights = addBoatLights( this.localLights, this.boat );
 		// rough, large or heavily overdrawn surfaces (ground, rocks, debris, foliage) take the local
 		// lights as Lambert only; the village, pier and boat get the full BRDF (glints on wet wood, metal)
 		for ( const root of [ this.terrain.mesh, ...this.outerTerrains.map( ( ot ) => ot.mesh ), this.rocks.group, this.debris && this.debris.group, this.vegetation && this.vegetation.group ] ) if ( root ) root.traverse( ( o ) => {
@@ -606,6 +608,27 @@ fn terrainWetness( xz: vec2f, h: f32 ) -> vec2f {
 
 	}
 
+	// Another boat type (game/Boats.js; Game.applyGear calls this): the model rebuilds in place, then
+	// what the scene set up on its meshes and the lights and perch on it follow.
+	setBoatType( type ) {
+
+		if ( ! this.boat.setType( type ) ) return false;
+		this.boat.group.traverse( ( o ) => {
+
+			if ( o.material ) for ( const m of Array.isArray( o.material ) ? o.material : [ o.material ] ) m.underwaterLighting = 'lite';
+			if ( o.isMesh && ( o.name === 'boat-trap' || o.name === 'boat-glass' ) ) o.layers.set( LAYERS.TRANSPARENT );
+
+		} );
+		if ( this.boatLights ) placeBoatLights( this.boatLights, this.boat );
+		const birds = this.wildlife && this.wildlife.birds;
+		if ( birds && birds.boatPerch && this.boat.perch ) birds.boatPerch.copy( this.boat.perch );
+		// aboard: keep standing where you were if it's still deck, else back to the boarding point
+		const p = this.player;
+		if ( p && p.mode === 'deck' ) p.boardBoat();
+		return true;
+
+	}
+
 	// Free (debug) camera on F; the walker / boat resumes where it was left.
 	setFreeCam( on ) {
 
@@ -864,7 +887,7 @@ fn terrainWetness( xz: vec2f, h: f32 ) -> vec2f {
 			rain: G.weather.value.x,
 			nearPier: Math.abs( p.x - WORLD.pier.x ) < 12 && p.z > WORLD.pier.zStart - 5 && p.z < WORLD.pier.zEnd + 8,
 			boat: {
-				active: this.boatCtl.driven, rpm: this.boatCtl.rpm, throttle: this.boatCtl.throttle, speed: this.boatCtl.velocity.length(),
+				active: this.boatCtl.driven, rpm: this.boatCtl.rpm, throttle: this.boatCtl.throttle, speed: this.boatCtl.velocity.length(), motor: this.boatCtl.sailArea > 0 ? 0 : 1,
 				position: this.boat.group.position, listenerInside: this.player.mode === 'boat' && this.player.camMode === 'first',
 			},
 		} );

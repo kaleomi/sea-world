@@ -5,14 +5,25 @@ import { newBoard, boardFromJSON, fillBoard, fillOrder, dropOrder, tierOf, TIERS
 import { LEGENDS, legendBounty, legendsFromJSON } from './Legends.js';
 import { questsFromJSON, completeQuest } from './Quests.js';
 import { LEAGUES, newCircuit, circuitFromJSON, makeOffer, enter, weighIn, tick, withdraw } from './Tournament.js';
+import { BOATS, START_BOAT, BOAT_TRACKS, isBoat, boatStats, nextBoatLevel, newBoatLevels, boatLevelsFromJSON } from './Boats.js';
 
 const SAVE_KEY = 'tidewater.save.v1';
 const BACKUP_KEY = SAVE_KEY + '.bak'; // the save before the last one: what load falls back to
 const BROKEN_KEY = SAVE_KEY + '.broken'; // an unreadable save, kept aside instead of overwritten
 // the save format; bump it when toJSON changes and add a MIGRATIONS step for the old one
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
 // MIGRATIONS[ n ]( d ) turns a version-n save into a version n + 1 one
-const MIGRATIONS = {};
+const MIGRATIONS = {
+	// 1 -> 2, the fleet: the lobster boat was the only boat; it keeps its hold, tank and engine levels
+	// and the fuel in its tank, and the sailboat joins it
+	1: ( d ) => {
+
+		const up = d.upgrades && typeof d.upgrades === 'object' ? d.upgrades : {};
+		const workboat = { hold: up.hold | 0, fuel: up.fuel | 0, engine: up.engine | 0, tank: Number.isFinite( d.fuel ) ? d.fuel : null };
+		return { ...d, v: 2, boat: 'workboat', fleet: { [ START_BOAT ]: newBoatLevels(), workboat } };
+
+	},
+};
 const FUEL_SAVE_MS = 5000;
 const TOURNEY_SAVE_MS = 10000; // the tournament clock is saved this often while one runs // at the helm the tank is saved this often, so a reload doesn't refill it
 
@@ -34,8 +45,11 @@ export class GameState {
 		this.log = {}; // species -> { count, bestKg, bestCm }
 		// the last addFish: { species, kg, cm, value, newSpecies, record, prevBestKg, prevBestCm, kept } (the catch card)
 		this.lastCatch = null;
-		this.upgrades = defaultUpgrades();
-		this.fuel = null; // litres left (null = full tank)
+		this.upgrades = defaultUpgrades(); // the rod, reel, line, fish finder and lights (Gear.js)
+		// the boats you own (Boats.js) and their own hold / tank / engine levels and fuel left
+		// ( { hold, fuel, engine, tank } , tank null = full), and the one you're using
+		this.fleet = { [ START_BOAT ]: newBoatLevels() };
+		this.boat = START_BOAT;
 		this.orders = newBoard(); // Joe's orders and your reputation with him (Orders.js)
 		this.claimed = []; // collection milestones already paid (Collection.js)
 		this.legends = {}; // the trophy wall: legend id -> { count, bestKg } (Legends.js)
@@ -52,7 +66,76 @@ export class GameState {
 
 	get stats() {
 
-		return gearStats( this.upgrades );
+		return { ...gearStats( this.upgrades ), ...boatStats( this.boat, this.boatLevels ) };
+
+	}
+
+	// the current boat's levels and tank
+	get boatLevels() {
+
+		return this.fleet[ this.boat ];
+
+	}
+
+	// litres left in the current boat's tank (null = full)
+	get fuel() {
+
+		return this.boatLevels.tank;
+
+	}
+
+	set fuel( v ) {
+
+		this.boatLevels.tank = v;
+
+	}
+
+	// what the fish go in: a cooler on the small boats, a hold on the big ones
+	get holdWord() {
+
+		return this.stats.holdKg > 30 ? 'Hold' : 'Cooler';
+
+	}
+
+	owns( id ) {
+
+		return !! this.fleet[ id ];
+
+	}
+
+	// buy a boat and take it (null when it's owned already or the money is short)
+	buyBoat( id ) {
+
+		if ( ! isBoat( id ) || this.owns( id ) || BOATS[ id ].price > this.money ) return null;
+		this.money -= BOATS[ id ].price;
+		this.fleet[ id ] = newBoatLevels();
+		this.boat = id;
+		this.save();
+		this.emit();
+		return id;
+
+	}
+
+	// add a boat for nothing (developer tools, tests)
+	giveBoat( id, use = true ) {
+
+		if ( ! isBoat( id ) ) return false;
+		if ( ! this.owns( id ) ) this.fleet[ id ] = newBoatLevels();
+		if ( use ) this.boat = id;
+		this.save();
+		this.emit();
+		return true;
+
+	}
+
+	// take another of your boats
+	switchBoat( id ) {
+
+		if ( ! this.owns( id ) || id === this.boat ) return false;
+		this.boat = id;
+		this.save();
+		this.emit();
+		return true;
 
 	}
 
@@ -217,10 +300,12 @@ export class GameState {
 	buy( key ) {
 
 		if ( ! UPGRADES[ key ] ) return null;
-		const next = nextLevel( this.upgrades, key );
+		const boatTrack = BOAT_TRACKS.includes( key );
+		const next = boatTrack ? nextBoatLevel( this.boat, this.boatLevels, key ) : nextLevel( this.upgrades, key );
 		if ( ! next || next.cost > this.money ) return null;
 		this.money -= next.cost;
-		this.upgrades[ key ] = next.index;
+		if ( boatTrack ) this.boatLevels[ key ] = next.index;
+		else this.upgrades[ key ] = next.index;
 		if ( key === 'fuel' ) this.fuel = null; // a new tank comes full
 		this.save();
 		this.emit();
@@ -371,7 +456,7 @@ export class GameState {
 
 	toJSON() {
 
-		return { v: SAVE_VERSION, money: this.money, inventory: this.inventory, log: this.log, upgrades: this.upgrades, fuel: this.fuel, orders: this.orders, claimed: this.claimed, legends: this.legends, quests: this.quests, circuit: this.circuit, nextId: this._nextId };
+		return { v: SAVE_VERSION, money: this.money, inventory: this.inventory, log: this.log, upgrades: this.upgrades, boat: this.boat, fleet: this.fleet, orders: this.orders, claimed: this.claimed, legends: this.legends, quests: this.quests, circuit: this.circuit, nextId: this._nextId };
 
 	}
 
@@ -386,7 +471,10 @@ export class GameState {
 		this.log = d.log && typeof d.log === 'object' ? d.log : {};
 		for ( const [ k, v ] of Object.entries( this.log ) ) if ( FISH[ k ] && v && v.bestKg > 0 && ! Number.isFinite( v.bestCm ) ) v.bestCm = Math.round( fishLengthCm( k, v.bestKg ) );
 		this.upgrades = { ...defaultUpgrades(), ...( d.upgrades || {} ) };
-		this.fuel = Number.isFinite( d.fuel ) ? d.fuel : null;
+		this.fleet = {};
+		if ( d.fleet && typeof d.fleet === 'object' ) for ( const [ id, lv ] of Object.entries( d.fleet ) ) if ( isBoat( id ) ) this.fleet[ id ] = boatLevelsFromJSON( id, lv );
+		if ( ! this.fleet[ START_BOAT ] ) this.fleet[ START_BOAT ] = newBoatLevels(); // you always have the sailboat
+		this.boat = this.fleet[ d.boat ] ? d.boat : START_BOAT;
 		// saves from before the orders start with a fresh board
 		this.orders = boardFromJSON( d.orders );
 		fillBoard( this.orders, this.rng );
@@ -488,7 +576,8 @@ export class GameState {
 		this.inventory = [];
 		this.log = {};
 		this.upgrades = defaultUpgrades();
-		this.fuel = null;
+		this.fleet = { [ START_BOAT ]: newBoatLevels() };
+		this.boat = START_BOAT;
 		this.orders = newBoard();
 		fillBoard( this.orders, this.rng );
 		this.claimed = [];
@@ -530,6 +619,22 @@ export function migrate( d ) {
 	}
 
 	return d;
+
+}
+
+// the boat in the save, without loading it (App builds that boat before the game starts)
+export function savedBoat( storage = safeStorage() ) {
+
+	try {
+
+		const d = migrate( parse( storage && storage.getItem( SAVE_KEY ) ) );
+		return d && isBoat( d.boat ) && d.fleet && d.fleet[ d.boat ] ? d.boat : START_BOAT;
+
+	} catch ( e ) {
+
+		return START_BOAT;
+
+	}
 
 }
 

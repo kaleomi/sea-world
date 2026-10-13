@@ -1,6 +1,7 @@
 import * as THREE from '../engine/index.js';
 import { WORLD } from '../world/WorldLayout.js';
 import { G } from '../core/Globals.js';
+import { sailForce, boomAngle } from '../game/Boats.js';
 
 const RHO = 1025; // sea water density
 const GRAV = 9.81;
@@ -65,6 +66,13 @@ export class BoatController {
 		// high on deck (traps, hauler, wheelhouse) gives a larger roll radius than the bare hull.
 		this.inertia = hydro.inertia ? hydro.inertia.clone() : new THREE.Vector3( 14600, 15700, 3500 );
 		this.inertia.z *= 1.24;
+		this._baseMass = this.mass;
+		this._baseInertia = this.inertia.clone();
+		this.rollDamp = 1; // x the roll damping (a heavy trawler rolls slowly)
+		// a sailboat: working sail area (m^2), 0 for a motor boat; sailing = this frame's sail state
+		this.sailArea = 0;
+		this.ballast = 0; // N m per unit heel (sin): a sailboat's ballast keel standing up to its rig
+		this.sailing = null;
 		// added mass / inertia when fully wet (fraction of the rigid-body value): surge, sway, heave;
 		// pitch, yaw, roll
 		this.addedMass = new THREE.Vector3( 0.6, 0.7, 0.05 ); // x (sway), y (heave), z (surge)
@@ -136,6 +144,20 @@ export class BoatController {
 		this.sternWorld = new THREE.Vector3();
 
 		this.apply();
+
+	}
+
+	// the boat type (game/Boats.js physics): engine, weight and roll damping; sail area for a sailboat
+	configure( { maxThrust = 26000, pitchSpeed = 16, mass = 1, roll = 1, ballast = 0 } = {}, sail = 0 ) {
+
+		this.mass = this._baseMass * mass;
+		this.inertia.copy( this._baseInertia ).multiplyScalar( mass );
+		this.rollDamp = roll;
+		this.maxThrust = maxThrust;
+		this.pitchSpeed = pitchSpeed;
+		this.sailArea = sail;
+		this.ballast = ballast;
+		if ( ! sail ) this.sailing = null;
 
 	}
 
@@ -258,7 +280,31 @@ export class BoatController {
 		this.model.setThrottle( this.throttle );
 		this.model.setSteering( this.steer );
 		this.model.setPropellerRPM( this.rpm * 2400 * Math.sign( this.throttle || 1 ) );
+		this.model.sailing = this.sailing;
 		this.apply();
+
+	}
+
+	// one integrator step's sail forces (see step); sets this.sailing for the model and the HUD
+	sailStep( addForceAt, invQ, fwd, side, up, wetD ) {
+
+		const ws = G.windSpeed.value, wd = G.windDir.value;
+		// apparent wind (where the air goes, relative to the boat) in the boat frame: x port, z ahead
+		_c5.set( wd.x * ws - this.velocity.x, 0, wd.y * ws - this.velocity.z ).applyQuaternion( invQ );
+		const app = Math.hypot( _c5.x, _c5.z );
+		// the angle off the bow the wind comes from (0 = head to wind), and the leeward side
+		const angle = Math.atan2( - _c5.x, - _c5.z );
+		const lee = _c5.x >= 0 ? 1 : - 1;
+		const set = this.driven ? Math.max( 0, this.throttle ) : 0;
+		const f = sailForce( angle, app, this.sailArea );
+		// a heeled rig catches less wind
+		const k = set * Math.max( 0, up.y ) * Math.max( 0, up.y ) * ( 0.3 + 0.7 * wetD );
+		this.sailing = { side: lee, angle: boomAngle( angle ), fill: f.drive > 1 ? set : 0, drive: f.drive * k, reefed: f.reefed && set > 0, irons: set > 0 && f.drive < 1, wind: Math.abs( angle ), apparent: app };
+		if ( k <= 0 ) return;
+		_c4.set( 0, 3.4, 0.4 );
+		this.toWorld( _c4, _c4 );
+		_f.copy( fwd ).multiplyScalar( f.drive * k ).addScaledVector( side, lee * f.side * k );
+		addForceAt( _f, _c4 );
 
 	}
 
@@ -367,6 +413,12 @@ export class BoatController {
 		addForceAt( _f.copy( fwd ).multiplyScalar( thrust ), propW );
 		if ( thrust < 0 ) addForceAt( _f.copy( side ).multiplyScalar( - thrust * 0.08 ), propW );
 
+		// ---- sails: drive and side force from the apparent wind, at the centre of effort high up the
+		// rig (so the boat heels and makes a little leeway); nothing inside the no-go zone. The sails
+		// are up while the helm is held ahead (W, or cruise); reefed in a strong wind.
+		if ( this.sailArea > 0 ) this.sailStep( addForceAt, invQ, fwd, side, up, wetD );
+		if ( this.ballast > 0 ) T.addScaledVector( fwd, - this.ballast * side.y * wetD );
+
 		// ---- rudder: lifting surface in the propeller race (actuator-disc slipstream); the local
 		// flow angle at the stern (drift + yaw) reduces its angle of attack
 		// the rudder's side force is partly carried by the aft hull (flap effect), so it acts higher
@@ -392,7 +444,7 @@ export class BoatController {
 		// ---- small extra angular damping (appendages, bilge), scaled by wetness
 		const wd = 0.2 + wetD;
 		// the keel's lift resists roll in proportion to speed (a boat underway rolls much less)
-		_v.set( - aLoc.x * 25000, - aLoc.y * 2000, - aLoc.z * ( 4500 + 900 * au ) ).multiplyScalar( wd ).applyQuaternion( this.quaternion );
+		_v.set( - aLoc.x * 25000, - aLoc.y * 2000, - aLoc.z * ( 4500 + 900 * au ) * this.rollDamp ).multiplyScalar( wd ).applyQuaternion( this.quaternion );
 		T.add( _v );
 
 		// ---- capsize guard: a full-keel lobster boat rights itself. The hull's own buoyancy holds

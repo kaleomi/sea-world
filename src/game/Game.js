@@ -12,6 +12,7 @@ import { FishStand } from './FishStand.js';
 import { Chandlery } from './Chandlery.js';
 import { CatchDisplay } from './CatchDisplay.js';
 import { UPGRADES, fuelBurn } from './Gear.js';
+import { BOATS, boatTrack, BOAT_TRACKS } from './Boats.js';
 import { TIERS } from './Orders.js';
 import { milestoneText } from './Collection.js';
 import { LEGENDS, rollLegend, legendWeight, legendTitle } from './Legends.js';
@@ -64,10 +65,10 @@ export class Game {
 		this._warned = null;
 		// cruise control at the helm (Player.updateBoat, C)
 		if ( app.player ) app.player.onCruise = ( c ) => this.toast( c ? t( 'Cruise control on · C or S to stop' ) : t( 'Cruise control off' ), 1800 );
-		// boat upgrades: engine (thrust / top speed) and deck floodlights for night fishing
-		const b = app.boatCtl;
-		this._engineBase = { maxThrust: b.maxThrust, pitchSpeed: b.pitchSpeed };
+		// the boat you're using (Boats.js), its engine or sails, and deck floodlights for night fishing
 		this.floods = [];
+		this._sailT = 0;
+		this._sailTold = 0;
 		if ( app.localLights ) this.addFloodlights( app.localLights, app.boat );
 		this._fuelOut = false;
 		this._sonarT = 0;
@@ -136,10 +137,25 @@ export class Game {
 		const g = this.state.stats;
 		this.rod.setGear( { castM: g.castM, reelSpeed: g.reelSpeed } );
 		const b = this.app.boatCtl;
-		if ( b && this._engineBase ) {
+		// a different boat: the model and everything on it changes in place (App.setBoatType)
+		if ( this.app.boat && this.app.boat.type !== g.boat && this.app.setBoatType ) {
 
-			b.maxThrust = this._engineBase.maxThrust * g.speedMul * g.speedMul;
-			b.pitchSpeed = this._engineBase.pitchSpeed * g.speedMul;
+			this.app.setBoatType( g.boat );
+			this.placeFloodlights();
+
+		}
+
+		if ( b && b.configure ) {
+
+			// engine upgrades: more thrust and a higher top speed; the sailboat's better sails, more drive
+			const B = BOATS[ g.boat ], k = g.speedMul * g.speedMul;
+			b.configure( B.physics, ( B.sail || 0 ) * k );
+			if ( ! B.sail ) {
+
+				b.maxThrust *= k;
+				b.pitchSpeed *= g.speedMul;
+
+			}
 
 		}
 
@@ -157,6 +173,7 @@ export class Game {
 			const local = new Vector3( x, 2.25, - 1.0 );
 			const localDir = new Vector3( x * 0.25, - 0.75, - 0.62 ).normalize();
 			const src = {
+				local,
 				position: new Vector3(), color: new Color( 1.0, 0.93, 0.8 ), intensity: 3.2, range: 14, kind: 'boatFlood',
 				dir: new Vector3(), cosInner: 0.8, cosOuter: 0.45, scale: 0,
 				update() {
@@ -173,12 +190,53 @@ export class Game {
 
 		}
 
+		this.placeFloodlights();
+
+	}
+
+	// where this boat type carries its floodlights (under the wheelhouse roof, up the mast, on the arch)
+	placeFloodlights() {
+
+		const pts = this.app.boat && this.app.boat.floodPoints;
+		if ( ! pts ) return;
+		this.floods.forEach( ( f, i ) => {
+
+			if ( pts[ i ] ) f.local.set( pts[ i ][ 0 ], pts[ i ][ 1 ], pts[ i ][ 2 ] );
+			f.update();
+
+		} );
+
 	}
 
 	buy( key ) {
 
 		const r = this.state.buy( key );
-		if ( r ) this.toast( `${ t( UPGRADES[ key ].name ) }: ${ t( r.label ) }` );
+		const track = BOAT_TRACKS.includes( key ) ? boatTrack( this.state.boat, key ) : UPGRADES[ key ];
+		if ( r ) this.toast( `${ t( track.name ) }: ${ t( r.label ) }` );
+		return r;
+
+	}
+
+	// the boats at Marta's: buy one (and take it), or take another you own. The boat changes where it
+	// lies: your boats share the one mooring.
+	buyBoat( id ) {
+
+		const r = this.state.buyBoat( id );
+		if ( r ) {
+
+			this.toast( t( 'You bought the {boat}! It\'s waiting where your boat was', { boat: t( BOATS[ id ].name ) } ), 4000 );
+			if ( this.app.audio && this.app.audio.coin ) this.app.audio.coin();
+
+		}
+
+		return r;
+
+	}
+
+	switchBoat( id ) {
+
+		const r = this.state.switchBoat( id );
+		if ( r ) this.toast( t( 'Now using the {boat}', { boat: t( BOATS[ id ].name ) } ), 2500 );
 		return r;
 
 	}
@@ -419,7 +477,7 @@ export class Game {
 		// the catch card's live fish portrait (or one queued thumbnail)
 		if ( this.hud && this.hud.portrait ) this.hud.portrait.update( dt );
 		if ( this.hud ) this.hud.update( {
-			fuel: aboard ? { litres: this.state.fuelL, tank: this.state.stats.fuelL } : null,
+			fuel: aboard && ! this.state.stats.sail ? { litres: this.state.fuelL, tank: this.state.stats.fuelL } : null,
 			sonar: aboard && this.state.stats.finder ? this._sonar : null,
 			fight: this.fight,
 			casting: rod.state === 'windup',
@@ -561,6 +619,28 @@ export class Game {
 
 	}
 
+	// the sailboat: say so when the sails can't draw (head to wind) or are reefed in a blow
+	updateSailing( dt ) {
+
+		const s = this.app.boatCtl.sailing;
+		this._sailTold -= dt;
+		if ( ! s ) return;
+		this._sailT = s.irons ? this._sailT + dt : 0;
+		if ( this._sailTold > 0 ) return;
+		if ( this._sailT > 3 ) {
+
+			this.toast( t( 'In irons: the sails can\'t fill head to wind · turn across the wind (the little motor only creeps)' ), 4200 );
+			this._sailTold = 40;
+
+		} else if ( s.reefed ) {
+
+			this.toast( t( 'Strong wind · sails reefed' ), 2500 );
+			this._sailTold = 120;
+
+		}
+
+	}
+
 	// fuel burn at the helm (the engine stops when the tank is dry) and the fish finder
 	updateBoat( dt ) {
 
@@ -570,9 +650,11 @@ export class Game {
 		this.updateStranded( dt, aboard );
 		if ( this._aboard && ! aboard && b.anchored ) this.toast( t( 'Anchor down · the boat waits here' ), 3000 );
 		this._aboard = aboard;
-		if ( b.driven ) {
+		const burn = BOATS[ s.boat ].physics.burn;
+		if ( b.driven && s.stats.sail ) this.updateSailing( dt );
+		else if ( b.driven && burn > 0 ) {
 
-			const left = s.burn( fuelBurn( b.rpm ) * dt );
+			const left = s.burn( fuelBurn( b.rpm ) * burn * dt );
 			if ( left <= 0 ) {
 
 				b.throttle = 0;
@@ -852,7 +934,7 @@ export class Game {
 			else {
 
 				if ( entry ) this.toast( `${ info.record ? t( 'New record! ' ) : '' }${ t( '{name} · {kg} kg · ${v}', { name: t( name ), kg: entry.kg.toFixed( 2 ), v: entry.value } ) }`, 3600 );
-				else this.toast( t( '{name} · {kg} kg · no room in the {hold}, let it go', { name: t( name ), kg: f.kg.toFixed( 1 ), hold: t( this.state.upgrades.hold > 0 ? 'Hold' : 'Cooler' ) } ), 3600 );
+				else this.toast( t( '{name} · {kg} kg · no room in the {hold}, let it go', { name: t( name ), kg: f.kg.toFixed( 1 ), hold: t( this.state.holdWord ) } ), 3600 );
 				this.landing = { species: f.species, kg: f.kg };
 
 			}

@@ -90,8 +90,10 @@ function f( x ) {
 
 export class BoatMaterials {
 
-	constructor( hullShape ) {
+	// paint: the hull's colours { bottom, boot, top, cove } (sRGB hex; the lobster boat's by default)
+	constructor( hullShape, paint = {} ) {
 
+		this.paint = { bottom: 0x7a1d15, boot: 0x0f1a30, top: 0xf2efe6, cove: 0x0f1a30, scuff: 1, ...paint };
 		this.hull = this.createHull( hullShape );
 		this.gelcoat = this.createGelcoat();
 		this.wood = this.createWood();
@@ -134,9 +136,9 @@ export class BoatMaterials {
 	let streakN = mx_noise_float3( vec3f( p.z * 7.0, p.y * 0.45, p.x * 7.0 ) );
 	let scuffN = mx_noise_float3( vec3f( p.z * 2.2, p.y * 34.0, p.x * 2.2 ) );
 
-	var c = mix( ${ col( 0x7a1d15 ) }, ${ col( 0x0f1a30 ) }, aboveBottom );
-	c = mix( c, ${ col( 0xf2efe6 ) }, aboveStripe );
-	c = mix( c, ${ col( 0x0f1a30 ) }, cove );
+	var c = mix( ${ col( this.paint.bottom ) }, ${ col( this.paint.boot ) }, aboveBottom );
+	c = mix( c, ${ col( this.paint.top ) }, aboveStripe );
+	c = mix( c, ${ col( this.paint.cove ) }, cove );
 
 	// waterline scum on the white, algae on the antifouling just below the boot top
 	let scum = boatInvstep( 0.16, n1 * 0.09 + 0.42, boot ) * aboveStripe * sat( n1 * 0.6 + 0.7 );
@@ -150,7 +152,7 @@ export class BoatMaterials {
 
 	// scuffs where traps come over the rail (starboard, aft of the wheelhouse)
 	let side = boatLstep( -0.2, 0.2, -p.x ) * boatInvstep( -0.6, 0.2, p.z ) * boatLstep( -3.7, -2.8, p.z );
-	let scuff = boatLstep( 0.45, 0.8, scuffN ) * boatLstep( 0.13, 0.18, below ) * boatInvstep( 0.45, 0.7, below ) * ( side * 0.8 + 0.2 );
+	let scuff = boatLstep( 0.45, 0.8, scuffN ) * boatLstep( 0.13, 0.18, below ) * boatInvstep( 0.45, 0.7, below ) * ( side * 0.8 + 0.2 ) * ${ f( this.paint.scuff ) };
 	c = mix( c, ${ col( 0x5f5e59 ) }, scuff * 0.55 );
 
 	s.albedo = c;
@@ -596,6 +598,20 @@ export class BoatMaterials {
 
 	}
 
+	// sailcloth (the sailboat only): plain, a little translucent-looking off-white, both faces lit
+	get sail() {
+
+		if ( ! this._sail ) {
+
+			this._sail = standard( { color: 0xf1ebdc, roughness: 0.82, metalness: 0, side: DoubleSide } );
+			this._sail.name = 'boatSail';
+
+		}
+
+		return this._sail;
+
+	}
+
 	setNavLights( on ) {
 
 		this.navOn.value = on ? 1 : 0;
@@ -605,6 +621,7 @@ export class BoatMaterials {
 	dispose() {
 
 		for ( const k of [ 'hull', 'gelcoat', 'wood', 'fittings', 'glass', 'glow', 'trap' ] ) this[ k ].dispose();
+		if ( this._sail ) this._sail.dispose();
 
 	}
 

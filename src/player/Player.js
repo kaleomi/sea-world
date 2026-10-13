@@ -1,9 +1,6 @@
 import * as THREE from '../engine/index.js';
 import { WORLD } from '../world/WorldLayout.js';
 import { G } from '../core/Globals.js';
-import { HOUSE } from '../world/boat/Wheelhouse.js';
-
-const HOUSE_HELM = { x: HOUSE.helmX, z: HOUSE.seatZ };
 
 const EYE = 1.62;
 const SWIM_EYE = EYE * 0.1; // eyes above the body's float point while swimming
@@ -476,7 +473,7 @@ export class Player {
 		b.throttle = 0;
 		this.cruise = 0;
 		this.mode = 'deck';
-		this.deckPos.set( HOUSE_HELM.x + 0.45, b.model.lines.deckY, HOUSE_HELM.z - 0.1 );
+		this.deckPos.copy( b.model.helmStand );
 		this.deckVel.set( 0, 0, 0 );
 		this.deckYaw = this.helmYaw;
 		this.pitch = this.helmPitch;
@@ -699,7 +696,7 @@ export class Player {
 		this.deckToWorld();
 
 		// prompts: take the helm, or step ashore
-		const hx = HOUSE_HELM.x, hz = HOUSE_HELM.z;
+		const hx = b.model.helmSeat.x, hz = b.model.helmSeat.z;
 		const nearHelm = Math.hypot( p.x - hx, p.z - hz ) < HELM_REACH && ! this.busy;
 		this._ashoreT -= dt;
 		if ( this._ashoreT <= 0 ) {
@@ -788,7 +785,8 @@ export class Player {
 		if ( inp.down( 'KeyA' ) ) steer += 1;
 		if ( inp.down( 'KeyD' ) ) steer -= 1;
 		b.setInput( throttle, steer, dt );
-		this.prompt = { key: 'E', text: this.cruise ? 'Leave helm   ·   C  cruise off   ·   S  brake' : 'Leave helm   ·   C  cruise   ·   V  camera' };
+		if ( b.sailArea > 0 ) this.prompt = { key: 'E', text: this.cruise ? 'Leave helm   ·   C  lower the sails' : 'Leave helm   ·   W  sails up   ·   C  keep them up   ·   V  camera' };
+		else this.prompt = { key: 'E', text: this.cruise ? 'Leave helm   ·   C  cruise off   ·   S  brake' : 'Leave helm   ·   C  cruise   ·   V  camera' };
 
 		// keep the player attached (for audio / queries)
 		b.toWorld( b.model.helmEye, this.position );

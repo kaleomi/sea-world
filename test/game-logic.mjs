@@ -116,7 +116,7 @@ ok( s.addFish( 'tarpon', 40, 22 ) === null && s.log.tarpon.count === 1, 'a fish 
 const value = s.holdValue;
 const sale = s.sell( [ a.id ] );
 ok( sale.count === 1 && s.money === a.value && s.inventory.length === 1, 'selling one fish pays for it' );
-s.upgrades.hold = 1;
+s.fleet[ s.boat ].hold = 1;
 const s2 = new GameState( storage );
 s.save();
 ok( s2.load() && s2.money === s.money && s2.inventory.length === 1 && s2.log.grunt.bestKg === 0.84 && s2.stats.holdKg === 70, 'save / load round trip' );
@@ -161,6 +161,7 @@ ok( Object.keys( defaultUpgrades() ).length === Object.keys( UPGRADES ).length &
 
 	const m = new Map();
 	const st = new GameState( { getItem: ( k ) => m.get( k ) ?? null, setItem: ( k, v ) => m.set( k, v ) } );
+	st.giveBoat( 'workboat' );
 	st.money = 100;
 	ok( st.buy( 'reel' ) && st.upgrades.reel === 1 && st.money === 10 && st.stats.reelSpeed === 1.6, 'buying the reel upgrade' );
 	ok( st.buy( 'reel' ) === null && st.upgrades.reel === 1, 'cannot buy what you cannot afford' );
@@ -199,7 +200,7 @@ ok( Object.keys( defaultUpgrades() ).length === Object.keys( UPGRADES ).length &
 	const m3 = new Map();
 	let t = 0;
 	const fuel = new GameState( { getItem: ( k ) => m3.get( k ) ?? null, setItem: ( k, v ) => m3.set( k, v ) }, () => t );
-	fuel.save();
+	fuel.giveBoat( 'workboat' );
 	for ( let i = 0; i < 100; i ++ ) { t += 100; fuel.burn( 0.1 ); } // 10 s at the helm, 10 litres
 	const reloaded = new GameState( { getItem: ( k ) => m3.get( k ) ?? null, setItem: () => {} } );
 	ok( reloaded.load() && reloaded.fuelL <= 40 - 4.9, 'fuel burnt at the helm survives a reload' );

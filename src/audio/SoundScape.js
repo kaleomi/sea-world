@@ -1079,6 +1079,7 @@ export class SoundScape {
 		const b = s.boat || EMPTY, bp = b.position || EMPTY, eb = e.boat;
 		eb.active = !! b.active;
 		eb.rpm = clamp( num( b.rpm, 0 ), 0, 1 );
+		eb.motor = clamp( num( b.motor, 1 ), 0, 1 ); // 0: a sailboat, no diesel
 		eb.speed = Math.abs( num( b.speed, 0 ) );
 		eb.x = num( bp.x, eb.x );
 		eb.y = num( bp.y, eb.y );
@@ -1183,7 +1184,7 @@ export class SoundScape {
 		const bd = Math.hypot( eb.x - e.lx, eb.z - e.lz );
 		const nearBoat = eb.active || bd < 60;
 		const eng = this._engine, rpm = eb.rpm;
-		this._bed( 'boat_engine', dB( lerp( MIX.engineIdle, MIX.engineRun, Math.pow( rpm, 0.8 ) ) ) * eng / dB( BANK.boat_engine.lufs ), now, 0.12,
+		this._bed( 'boat_engine', dB( lerp( MIX.engineIdle, MIX.engineRun, Math.pow( rpm, 0.8 ) ) ) * eng * eb.motor / dB( BANK.boat_engine.lufs ), now, 0.12,
 			( 0.8 + 0.85 * rpm ) * lerp( 0.75, 1, eng ) );
 		this._ramp( this.engineLP.frequency, 900 + 6500 * Math.pow( rpm, 1.3 ), 0.12 );
 		const sp = eb.speed;

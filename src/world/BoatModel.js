@@ -4,9 +4,10 @@ import { HullLines, RHO_SEAWATER } from './boat/HullLines.js';
 import { GeoKit, triangleCount } from './boat/GeoKit.js';
 import { BoatMaterials } from './boat/BoatMaterials.js';
 import { buildHull, buildHullVolume, keelVolume, houseHalfWidth, KEEL } from './boat/HullBuilder.js';
-import { buildWheelhouse, wheelGeometry, throttleGeometry, radarArrayGeometry, HOUSE, roofTopY } from './boat/Wheelhouse.js';
+import { buildWheelhouse, buildHelmConsole, wheelGeometry, throttleGeometry, radarArrayGeometry, HOUSE, roofTopY } from './boat/Wheelhouse.js';
 import { buildDeckGear, TRAPS, TRAP, HAULER } from './boat/DeckGear.js';
 import { propellerGeometry, rudderGeometry, PROP, RUDDER } from './boat/Running.js';
+import { buildBulkhead, buildSloop, buildRunabout, buildTrawl, tillerGeometry, boomGeometry, mainsailGeometry, jibGeometry, outboardGeometry, SLOOP, JIB, OUTBOARDS } from './boat/Rigs.js';
 
 const STATIC_BUCKETS = [ 'hull', 'gelcoat', 'wood', 'fittings', 'trap', 'glow', 'glass' ];
 const WHEEL_TURNS = 0.75; // wheel turns from centre to hard over
@@ -28,7 +29,18 @@ function transverseInertia( lines ) {
 
 }
 
-// ~8.2 m Downeast lobster boat, built procedurally (37k triangles, 12 draw calls).
+// What each boat type looks like on the shared hull (game/Boats.js has how they go): house 'wheelhouse'
+// | 'console' (open, dash and windscreen) | 'none'; the sailboat's rig, the speedboat's outboards, the
+// trawler's gear, which deck gear stays aboard and the hull paint ({ bottom, boot, top, cove }).
+export const BOAT_LOOKS = {
+	sloop: { house: 'none', rig: 'sloop', gear: { lobster: false, buoys: false }, paint: { bottom: 0x7a1d15, boot: 0xe9e1c8, top: 0x1f4d3a, cove: 0xc9a24a, scuff: 0.15 } },
+	workboat: { house: 'wheelhouse', gear: { lobster: true } },
+	speedboat: { house: 'console', outboards: true, inboard: false, gear: { lobster: false, buoys: false }, paint: { bottom: 0xe6e6e2, boot: 0x15171a, top: 0xb3121f, cove: 0xf4f3ef, scuff: 0.1 } },
+	trawler: { house: 'wheelhouse', trawl: true, gear: { lobster: false, buoys: true, coils: false }, paint: { bottom: 0x7a1d15, boot: 0xf2efe6, top: 0x1b3a5c, cove: 0xf2c14e, scuff: 0.5 } },
+};
+
+// ~8.2 m Downeast lobster boat, built procedurally (37k triangles, 12 draw calls), and the other boat
+// types on the same hull (BOAT_LOOKS).
 //
 // Boat frame: +Z forward, +Y up, +X port. y = 0 is the design waterline,
 // z = 0 the middle of the waterline, x = 0 the centerline.
@@ -45,64 +57,14 @@ function transverseInertia( lines ) {
 // - Shaders animate with G.time (radar sweep, antenna sway, ensign) and brighten with G.night.
 export class BoatModel {
 
-	constructor() {
+	// type: a BOAT_LOOKS key (setType() rebuilds the boat in place, in the same group)
+	constructor( type = 'workboat' ) {
 
 		const lines = this.lines = new HullLines();
-		const materials = this.materials = new BoatMaterials( lines );
-		const kit = new GeoKit();
-		const parts = {};
-
-		buildHull( kit, lines );
-		buildWheelhouse( kit, lines, parts );
-		buildDeckGear( kit, lines, parts );
-
 		this.group = new Group();
-		this.group.name = 'LobsterBoat';
+		this.group.name = 'Boat';
 		this.meshes = {};
-
-		for ( const name of STATIC_BUCKETS ) {
-
-			const geo = kit.merged( name );
-			if ( ! geo ) continue;
-			const mesh = new Mesh( geo, materials[ name ] );
-			mesh.name = 'boat-' + name;
-			mesh.castShadow = name !== 'glass';
-			mesh.receiveShadow = true;
-			if ( name === 'glass' ) mesh.renderOrder = 1;
-			this.group.add( mesh );
-			this.meshes[ name ] = mesh;
-
-		}
-
-		// ---- animated parts (one draw call each)
-
-		const addPart = ( name, geo, mat, position, parent = this.group ) => {
-
-			const mesh = new Mesh( geo, mat );
-			mesh.name = 'boat-' + name;
-			mesh.castShadow = true;
-			mesh.receiveShadow = true;
-			mesh.position.copy( position );
-			parent.add( mesh );
-			this.meshes[ name ] = mesh;
-			return mesh;
-
-		};
-
-		// helm wheel: pivot aligned with the shaft, wheel spins about its local Z
-		this.wheelPivot = new Object3D();
-		this.wheelPivot.name = 'boat-wheel-pivot';
-		this.wheelPivot.position.copy( parts.wheelCenter );
-		this.wheelPivot.quaternion.setFromUnitVectors( new Vector3( 0, 0, 1 ), parts.wheelAxis );
-		this.group.add( this.wheelPivot );
-		this.wheelMesh = addPart( 'wheel', wheelGeometry(), materials.wood, new Vector3(), this.wheelPivot );
-
-		this.throttleMesh = addPart( 'throttle', throttleGeometry(), materials.fittings, parts.throttlePivot );
-		this.radarMesh = addPart( 'radar', radarArrayGeometry(), materials.fittings, parts.radarPivot );
-		this.propMesh = addPart( 'propeller', propellerGeometry(), materials.fittings, PROP.position );
-		this.rudderMesh = addPart( 'rudder', rudderGeometry(), materials.fittings, RUDDER.pivot );
-
-		materials.flagPivot.value.copy( parts.flagPivot );
+		this.type = null;
 
 		// ---- dimensions and hydrostatics
 
@@ -151,7 +113,6 @@ export class BoatModel {
 
 		// ---- anchor points (boat frame)
 
-		this.helmEye = new Vector3( HOUSE.helmX, 1.85, 0.3 );
 		this.boardPoint = new Vector3( 0, lines.deckY, - 1.75 );
 
 		this.exitPoints = [];
@@ -174,7 +135,6 @@ export class BoatModel {
 		}
 
 		this.hullSamples = lines.buildHullSamples( 8 );
-		this.colliders = this._buildColliders();
 
 		// ---- state
 
@@ -189,9 +149,207 @@ export class BoatModel {
 		this._vel = new Vector3();
 		this._flagDir = new Vector3( 0, 0, - 1 );
 		this._flagWind = 0.5;
+		this._sailSide = 1; // the side the boom is out on (+1 port)
+		this._boom = 0.2; // boom angle off the centreline
+		this._sailFill = 0; // 0 sails down / flogging .. 1 drawing
+		this.sailing = null; // set by the controller each frame: { side, angle, fill } (sailboat only)
 
-		this.setSteering( 0 );
-		this.setThrottle( 0 );
+		this.setType( type );
+
+	}
+
+	// Rebuild as another boat type (BOAT_LOOKS), in place: the same group, hull lines and hydrostatics;
+	// new meshes, materials, helm, colliders, light and perch points.
+	setType( type ) {
+
+		if ( ! BOAT_LOOKS[ type ] ) type = 'workboat';
+		if ( type === this.type ) return false;
+		this._clear();
+		this.type = type;
+		this.look = BOAT_LOOKS[ type ];
+		this._build( this.look );
+		this.setSteering( this._steer || 0 );
+		this.setThrottle( this._throttle || 0 );
+		return true;
+
+	}
+
+	_clear() {
+
+		if ( ! this.materials ) return;
+		for ( const c of [ ...this.group.children ] ) if ( c.name.startsWith( 'boat-' ) ) this.group.remove( c );
+		for ( const m of Object.values( this.meshes ) ) m.geometry.dispose();
+		this.materials.dispose();
+		this.meshes = {};
+		this.wheelMesh = this.throttleMesh = this.radarMesh = this.propMesh = this.rudderMesh = this.tillerMesh = null;
+		this.boomPivot = this.jibPivot = this.outboards = null;
+
+	}
+
+	_build( look ) {
+
+		const lines = this.lines;
+		const materials = this.materials = new BoatMaterials( lines, look.paint );
+		const kit = new GeoKit();
+		const parts = {};
+
+		buildHull( kit, lines );
+		if ( look.house === 'wheelhouse' ) buildWheelhouse( kit, lines, parts );
+		else {
+
+			buildBulkhead( kit, lines );
+			if ( look.house === 'console' ) buildHelmConsole( kit, lines, parts );
+
+		}
+
+		if ( look.rig === 'sloop' ) buildSloop( kit, lines );
+		if ( look.house === 'console' ) buildRunabout( kit, lines );
+		if ( look.trawl ) buildTrawl( kit, lines );
+		buildDeckGear( kit, lines, parts, look.gear );
+
+		for ( const name of STATIC_BUCKETS ) {
+
+			const geo = kit.merged( name );
+			if ( ! geo ) continue;
+			const mesh = new Mesh( geo, materials[ name ] );
+			mesh.name = 'boat-' + name;
+			mesh.castShadow = name !== 'glass';
+			mesh.receiveShadow = true;
+			if ( name === 'glass' ) mesh.renderOrder = 1;
+			this.group.add( mesh );
+			this.meshes[ name ] = mesh;
+
+		}
+
+		// ---- animated parts (one draw call each)
+
+		const addPart = ( name, geo, mat, position, parent = this.group ) => {
+
+			const mesh = new Mesh( geo, mat );
+			mesh.name = 'boat-' + name;
+			mesh.castShadow = true;
+			mesh.receiveShadow = true;
+			mesh.position.copy( position );
+			parent.add( mesh );
+			this.meshes[ name ] = mesh;
+			return mesh;
+
+		};
+
+		const pivot = ( name, position ) => {
+
+			const o = new Object3D();
+			o.name = 'boat-' + name;
+			o.position.copy( position );
+			this.group.add( o );
+			return o;
+
+		};
+
+		// helm wheel: pivot aligned with the shaft, wheel spins about its local Z
+		if ( parts.wheelCenter ) {
+
+			this.wheelPivot = pivot( 'wheel-pivot', parts.wheelCenter );
+			this.wheelPivot.quaternion.setFromUnitVectors( new Vector3( 0, 0, 1 ), parts.wheelAxis );
+			this.wheelMesh = addPart( 'wheel', wheelGeometry(), materials.wood, new Vector3(), this.wheelPivot );
+
+		}
+
+		if ( parts.throttlePivot ) this.throttleMesh = addPart( 'throttle', throttleGeometry(), materials.fittings, parts.throttlePivot );
+		if ( parts.radarPivot ) this.radarMesh = addPart( 'radar', radarArrayGeometry(), materials.fittings, parts.radarPivot );
+		if ( look.inboard !== false ) {
+
+			this.propMesh = addPart( 'propeller', propellerGeometry(), materials.fittings, PROP.position );
+			this.rudderMesh = addPart( 'rudder', rudderGeometry(), materials.fittings, RUDDER.pivot );
+
+		}
+
+		if ( look.rig === 'sloop' ) {
+
+			this.tillerMesh = addPart( 'tiller', tillerGeometry( lines, RUDDER.pivot ), materials.wood, new Vector3(), this.rudderMesh );
+			// boom and mainsail swing about the gooseneck; the jib about the forestay
+			this.boomPivot = pivot( 'boom-pivot', new Vector3( 0, SLOOP.gooseneckY, SLOOP.mastZ - 0.1 ) );
+			addPart( 'boom', boomGeometry(), materials.fittings, new Vector3( 0, 0, 0 ), this.boomPivot );
+			this.mainsails = [ 1, - 1 ].map( ( s ) => addPart( s > 0 ? 'mainsail-port' : 'mainsail-stbd', mainsailGeometry( s ), materials.sail, new Vector3( 0, 0, 0 ), this.boomPivot ) );
+			this.jibPivot = pivot( 'jib-pivot', JIB.tack );
+			this.jibs = [ 1, - 1 ].map( ( s ) => addPart( s > 0 ? 'jib-port' : 'jib-stbd', jibGeometry( s ), materials.sail, new Vector3(), this.jibPivot ) );
+			this._setSails( 1, 0.2, 0 );
+
+		}
+
+		if ( look.outboards ) {
+
+			this.outboards = [];
+			const geo = outboardGeometry();
+			for ( const s of [ 1, - 1 ] ) {
+
+				const p = pivot( s > 0 ? 'outboard-port' : 'outboard-stbd', new Vector3( s * OUTBOARDS.x, OUTBOARDS.y, OUTBOARDS.z ) );
+				addPart( s > 0 ? 'outboard-p' : 'outboard-s', s > 0 ? geo : geo.clone(), materials.fittings, new Vector3(), p );
+				this.outboards.push( p );
+
+			}
+
+		}
+
+		materials.flagPivot.value.copy( parts.flagPivot );
+
+		// ---- the helm and the other type-dependent anchor points (boat frame)
+		const L = lines;
+		if ( look.rig === 'sloop' ) {
+
+			this.helmSeat = { x: SLOOP.helm.x, z: SLOOP.helm.z };
+			this.helmEye = new Vector3( SLOOP.helm.x, SLOOP.benchY + 0.78, SLOOP.helm.z );
+			this.helmStand = new Vector3( SLOOP.helm.x + 0.55, L.deckY, SLOOP.helm.z + 0.2 );
+
+		} else {
+
+			this.helmSeat = { x: HOUSE.helmX, z: HOUSE.seatZ };
+			this.helmEye = new Vector3( HOUSE.helmX, 1.85, 0.3 );
+			this.helmStand = new Vector3( HOUSE.helmX + 0.45, L.deckY, HOUSE.seatZ - 0.1 );
+
+		}
+
+		const tBow = L.tAtSheerZ( 3.6 ), yBow = L.sheerY( tBow ) + 0.06, xBow = L.sheerX( tBow ) - 0.05;
+		const stern = [ 0, L.sheerY( 0 ) + 0.1, L.zAft - 0.05 ];
+		if ( look.house === 'wheelhouse' ) {
+
+			this.lightPoints = { dome: [ 0, 2.24, 0.42 ], instruments: [ - 0.45, 1.5, 1.12 ], port: [ 0.47, 3.45, - 0.47 ], starboard: [ - 0.47, 3.45, - 0.47 ], masthead: [ 0, 3.97, - 0.5 ], stern };
+			this.floodPoints = [ [ - 0.8, 2.25, - 1.0 ], [ 0.8, 2.25, - 1.0 ] ];
+			this.perch = new Vector3( - 0.5, this.dimensions.houseRoofHeight, 0.15 );
+
+		} else if ( look.rig === 'sloop' ) {
+
+			this.lightPoints = { dome: null, instruments: null, port: [ xBow, yBow + 0.55, 3.75 ], starboard: [ - xBow, yBow + 0.55, 3.75 ], masthead: [ 0, SLOOP.mastTop + 0.1, SLOOP.mastZ ], stern };
+			this.floodPoints = [ [ - 0.25, SLOOP.spreaderY - 0.15, SLOOP.mastZ - 0.12 ], [ 0.25, SLOOP.spreaderY - 0.15, SLOOP.mastZ - 0.12 ] ];
+			this.perch = new Vector3( 0, L.sheerY( L.tAtSheerZ( 4.1 ) ) + 0.6, 4.05 );
+
+		} else {
+
+			const ya = L.sheerY( L.tAtSheerZ( - 2.85 ) ) + 1.37;
+			this.lightPoints = { dome: null, instruments: [ - 0.45, 1.5, 1.12 ], port: [ xBow, yBow, 3.6 ], starboard: [ - xBow, yBow, 3.6 ], masthead: [ 0, ya + 0.05, - 3.05 ], stern };
+			this.floodPoints = [ [ - 0.5, ya - 0.1, - 3.0 ], [ 0.5, ya - 0.1, - 3.0 ] ];
+			this.perch = new Vector3( 0, ya + 0.04, - 3.05 );
+
+		}
+
+		this.colliders = this._buildColliders( look );
+
+	}
+
+	// the sails' set: side +1 = boom out to port; boom radians off the centreline; fill 0 (luffing,
+	// shaking) .. 1 (drawing)
+	_setSails( side, boom, fill ) {
+
+		const s = side >= 0 ? 1 : - 1;
+		this.boomPivot.rotation.y = - s * boom;
+		this.mainsails[ 0 ].visible = s > 0;
+		this.mainsails[ 1 ].visible = s < 0;
+		this.mainsails[ 0 ].scale.x = this.mainsails[ 1 ].scale.x = 0.15 + 0.85 * fill;
+		_q.setFromAxisAngle( JIB.axis, s * Math.min( boom * 0.75, 0.75 ) );
+		this.jibPivot.quaternion.copy( _q );
+		this.jibs[ 0 ].visible = s > 0;
+		this.jibs[ 1 ].visible = s < 0;
+		this.jibs[ 0 ].scale.x = this.jibs[ 1 ].scale.x = 0.15 + 0.85 * fill;
 
 	}
 
@@ -232,8 +390,9 @@ export class BoatModel {
 
 		const a = MathUtils.clamp( angle, - 1, 1 );
 		this._steer = a;
-		this.wheelMesh.rotation.z = - a * WHEEL_TURNS * Math.PI * 2;
-		this.rudderMesh.rotation.y = - a * RUDDER.maxAngle;
+		if ( this.wheelMesh ) this.wheelMesh.rotation.z = - a * WHEEL_TURNS * Math.PI * 2;
+		if ( this.rudderMesh ) this.rudderMesh.rotation.y = - a * RUDDER.maxAngle;
+		if ( this.outboards ) for ( const o of this.outboards ) o.rotation.y = - a * 0.45;
 
 	}
 
@@ -241,7 +400,7 @@ export class BoatModel {
 	setThrottle( t ) {
 
 		this._throttle = MathUtils.clamp( t, - 1, 1 );
-		this.throttleMesh.rotation.x = this._throttle * THROTTLE_ANGLE;
+		if ( this.throttleMesh ) this.throttleMesh.rotation.x = this._throttle * THROTTLE_ANGLE;
 
 	}
 
@@ -267,10 +426,30 @@ export class BoatModel {
 		const rps = this._rpm / 60;
 		const shown = PROP_DISPLAY_RPS * Math.tanh( rps / PROP_DISPLAY_RPS );
 		this._propAngle = ( this._propAngle + shown * Math.PI * 2 * dt ) % ( Math.PI * 2 );
-		this.propMesh.rotation.z = this._propAngle;
+		if ( this.propMesh ) this.propMesh.rotation.z = this._propAngle;
 
 		this._radarAngle = ( this._radarAngle + RADAR_RPM / 60 * Math.PI * 2 * dt ) % ( Math.PI * 2 );
-		this.radarMesh.rotation.y = this._radarAngle;
+		if ( this.radarMesh ) this.radarMesh.rotation.y = this._radarAngle;
+
+		// sails: the boom eases toward where the controller wants it (the boat's point of sail), gybing
+		// across when the wind comes over the other side; sails flutter when they don't draw
+		if ( this.boomPivot ) {
+
+			const s = this.sailing;
+			const side = s ? s.side : this._sailSide, target = s ? s.angle : 0.12, fill = s ? s.fill : 0;
+			if ( side !== this._sailSide ) {
+
+				// the boom swings through the centreline first
+				this._boom -= dt * 1.6;
+				if ( this._boom <= 0.04 ) this._sailSide = side;
+
+			} else this._boom += ( target - this._boom ) * ( 1 - Math.exp( - dt * 1.5 ) );
+
+			this._sailFill += ( fill - this._sailFill ) * ( 1 - Math.exp( - dt * 2 ) );
+			const flog = ( 1 - this._sailFill ) * 0.06 * Math.sin( this._time * 11 ) * ( s ? 1 : 0.3 );
+			this._setSails( this._sailSide, Math.max( 0.02, this._boom + flog ), this._sailFill );
+
+		}
 
 		// apparent wind (true wind minus boat velocity) in the boat frame drives the ensign
 		this.group.updateWorldMatrix( true, false );
@@ -320,9 +499,10 @@ export class BoatModel {
 	}
 
 	// Rough boat-frame colliders (axis-aligned in the boat frame) for a character controller.
-	_buildColliders() {
+	_buildColliders( look = BOAT_LOOKS.workboat ) {
 
 		const L = this.lines;
+		const house = look.house === 'wheelhouse', dash = look.house !== 'none';
 		const boxes = [];
 		const add = ( tag, min, max, walkable = false, solid = true ) => {
 
@@ -334,7 +514,7 @@ export class BoatModel {
 
 		const V = ( x, y, z ) => new Vector3( x, y, z );
 		const inner = ( z ) => L.halfBreadth( L.tAtSheerZ( z ), L.deckY ) - L.shell;
-		add( 'deck', V( - inner( - 1.5 ), L.deckY - 0.1, L.zAft + L.shell ), V( inner( - 1.5 ), L.deckY, HOUSE.dash.zFace ), true, false );
+		add( 'deck', V( - inner( - 1.5 ), L.deckY - 0.1, L.zAft + L.shell ), V( inner( - 1.5 ), L.deckY, dash ? HOUSE.dash.zFace : L.houseFront ), true, false );
 		// bulwarks in three segments following the sheer
 		for ( const [ z0, z1 ] of [ [ L.zAft, - 2.3 ], [ - 2.3, - 0.7 ], [ - 0.7, L.houseFront ] ] ) {
 
@@ -347,27 +527,49 @@ export class BoatModel {
 		}
 
 		add( 'transom', V( - L.sheerX( 0 ), L.deckY, L.zAft ), V( L.sheerX( 0 ), L.sheerY( 0 ) + 0.045, L.zAft + L.shell ) );
-		for ( const s of [ 1, - 1 ] ) {
+		if ( house ) for ( const s of [ 1, - 1 ] ) {
 
 			const x0 = houseHalfWidth( L, L.houseBack ) - HOUSE.wallT, x1 = houseHalfWidth( L, L.houseBack );
 			add( 'houseWall', V( Math.min( s * x0, s * x1 ), L.sheerY( L.tAtSheerZ( L.houseBack ) ), L.houseBack ), V( Math.max( s * x0, s * x1 ), HOUSE.roofUnderY, L.houseFront ) );
 
 		}
 
-		const d = HOUSE.dash;
-		add( 'console', V( - d.halfW, L.deckY, d.zFace ), V( d.halfW, d.yTop, L.houseFront ) );
-		add( 'helmSeat', V( HOUSE.helmX - 0.23, L.deckY, HOUSE.seatZ - 0.24 ), V( HOUSE.helmX + 0.23, 1.05, HOUSE.seatZ + 0.21 ) );
-		add( 'bench', V( 0.65, L.deckY, 0.075 ), V( 1.07, L.deckY + 0.47, 0.825 ), true );
-		add( 'roof', V( - 1.25, HOUSE.roofUnderY, HOUSE.roofZ0 ), V( 1.25, roofTopY( 0 ), HOUSE.roofZ1 ), true );
-		for ( const [ x, level, z ] of TRAPS ) {
+		if ( dash ) {
 
-			const y0 = L.deckY + 0.03 + level * ( TRAP.H + 0.035 );
-			add( 'trap', V( x - TRAP.W / 2, y0, z - TRAP.L / 2 ), V( x + TRAP.W / 2, y0 + TRAP.H, z + TRAP.L / 2 ), true );
+			const d = HOUSE.dash;
+			add( 'console', V( - d.halfW, L.deckY, d.zFace ), V( d.halfW, d.yTop, L.houseFront ) );
+			add( 'helmSeat', V( HOUSE.helmX - 0.23, L.deckY, HOUSE.seatZ - 0.24 ), V( HOUSE.helmX + 0.23, 1.05, HOUSE.seatZ + 0.21 ) );
+			add( 'bench', V( 0.65, L.deckY, 0.075 ), V( 1.07, L.deckY + 0.47, 0.825 ), true );
 
 		}
 
-		add( 'hauler', V( HAULER.x - 0.2, L.deckY, HAULER.z - 0.08 ), V( HAULER.x + 0.2, HAULER.y + 0.2, HAULER.z + 0.25 ) );
-		add( 'baitBarrel', V( 0.6, L.deckY, - 1.06 ), V( 1.12, L.deckY + 0.8, - 0.54 ) );
+		if ( house ) add( 'roof', V( - 1.25, HOUSE.roofUnderY, HOUSE.roofZ0 ), V( 1.25, roofTopY( 0 ), HOUSE.roofZ1 ), true );
+		if ( look.gear && look.gear.lobster ) {
+
+			for ( const [ x, level, z ] of TRAPS ) {
+
+				const y0 = L.deckY + 0.03 + level * ( TRAP.H + 0.035 );
+				add( 'trap', V( x - TRAP.W / 2, y0, z - TRAP.L / 2 ), V( x + TRAP.W / 2, y0 + TRAP.H, z + TRAP.L / 2 ), true );
+
+			}
+
+			add( 'hauler', V( HAULER.x - 0.2, L.deckY, HAULER.z - 0.08 ), V( HAULER.x + 0.2, HAULER.y + 0.2, HAULER.z + 0.25 ) );
+			add( 'baitBarrel', V( 0.6, L.deckY, - 1.06 ), V( 1.12, L.deckY + 0.8, - 0.54 ) );
+
+		}
+
+		if ( look.rig === 'sloop' ) {
+
+			// cockpit benches (walkable), the mast
+			const [ z0, z1 ] = SLOOP.benchZ;
+			const xo = inner( ( z0 + z1 ) / 2 );
+			for ( const s of [ 1, - 1 ] ) add( 'bench', V( Math.min( s * xo, s * ( xo - 0.42 ) ), L.deckY, z0 ), V( Math.max( s * xo, s * ( xo - 0.42 ) ), SLOOP.benchY + 0.02, z1 ), true );
+			add( 'mast', V( - 0.08, L.deckY, SLOOP.mastZ - 0.08 ), V( 0.08, SLOOP.mastTop, SLOOP.mastZ + 0.08 ) );
+
+		}
+
+		if ( look.house === 'console' ) add( 'sternBench', V( - 1.2, L.deckY, L.zAft + L.shell ), V( 1.2, L.deckY + 0.5, L.zAft + L.shell + 0.75 ), true );
+		if ( look.trawl ) add( 'netDrum', V( - 0.85, L.deckY, - 2.9 ), V( 0.85, L.deckY + 1.25, - 1.7 ) );
 		// foredeck steps (walkable) from the house front to the stem head
 		for ( const [ z0, z1 ] of [ [ L.houseFront, 2.4 ], [ 2.4, 3.3 ], [ 3.3, 4.15 ] ] ) {
 

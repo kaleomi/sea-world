@@ -24,16 +24,23 @@ export function buoyGeometry( colors = [ 0xff6a13, 0xf4f1ea, 0x1d4f9c ], stick =
 
 }
 
-export function buildDeckGear( kit, L, parts ) {
+// lobster: the traps, hauler, bait and buoys of a working lobster boat (the other boat types leave
+// them ashore); buoys: the buoys lying on deck without the rest
+export function buildDeckGear( kit, L, parts, { lobster = true, buoys = lobster, coils = true } = {} ) {
 
-	buildTraps( kit, L );
-	buildHauler( kit, L );
-	buildCoils( kit, L );
-	buildBuoys( kit, L );
+	if ( lobster ) {
+
+		buildTraps( kit, L );
+		buildHauler( kit, L );
+		buildContainers( kit, L );
+
+	}
+
+	if ( coils ) buildCoils( kit, L, lobster );
+	if ( buoys ) buildBuoys( kit, L );
 	buildFenders( kit, L );
 	buildCleats( kit, L );
 	buildBow( kit, L );
-	buildContainers( kit, L );
 	buildStern( kit, L, parts );
 
 }
@@ -216,9 +223,10 @@ function coil( cx, cy, cz, turns, radius, ropeR, seed ) {
 
 }
 
-function buildCoils( kit, L ) {
+function buildCoils( kit, L, onTraps = true ) {
 
 	kit.add( 'fittings', coil( - 0.5, L.deckY, - 2.15, 5, 0.22, 0.011, 0.3 ), { color: 0xe4c235, rough: 0.8, pattern: 1 } );
+	if ( ! onTraps ) return;
 	const topTrap = L.deckY + 0.03 + TRAP.H + 0.012;
 	kit.add( 'fittings', coil( - 0.68, topTrap, - 3.2, 4, 0.19, 0.01, 1.7 ), { color: 0x2f6f4f, rough: 0.8, pattern: 1 } );
 

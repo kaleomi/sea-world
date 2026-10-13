@@ -298,6 +298,7 @@ export class NetClient {
 
 		} else out.b = null;
 
+		out.bt = B.bt || 'workboat'; // relays from before the fleet don't pass it on
 		out.l = B.l ? ( A.l && ! s ? lerp3( A.l, B.l, k, out.l || [ 0, 0, 0 ] ) : [ ...B.l ] ) : null;
 		out.r = B.r | 0;
 		out.k = B.k ? ( A.k && A.r === B.r ? lerp3( A.k, B.k, k, out.k || [ 0, 0, 0 ] ) : [ ...B.k ] ) : null;

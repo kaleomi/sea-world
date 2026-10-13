@@ -122,6 +122,14 @@ export function buildWheelhouse( kit, L, parts ) {
 
 }
 
+// an open boat's helm: the dash with its wheel, throttle and screens, and the helm seat (no house)
+export function buildHelmConsole( kit, L, parts ) {
+
+	buildConsole( kit, L, parts, false );
+	buildSeating( kit, L );
+
+}
+
 // ------------------------------------------------------------------ side walls
 
 function sideWindowHoles( L ) {
@@ -412,7 +420,7 @@ export function panelFrame() {
 
 }
 
-function buildConsole( kit, L, parts ) {
+function buildConsole( kit, L, parts, roofed = true ) {
 
 	const d = HOUSE.dash;
 	// console body; its ends follow the hull lining where the flared hull narrows toward the bow
@@ -539,41 +547,45 @@ function buildConsole( kit, L, parts ) {
 
 	}
 
-	// overhead console with VHF radio above the windshield
-	const oz = 1.02, oy = HOUSE.roofUnderY - 0.07;
-	const oc = roundedBox( 0.9, 0.13, 0.3, 0.02, 1 );
-	oc.applyMatrix4( mat4( - 0.15, oy, oz, - 0.25, 0, 0 ) );
-	kit.add( 'fittings', oc, { color: 0x24262a, rough: 0.6 } );
-	const face = mat4( - 0.15, oy, oz, - 0.25, 0, 0 ); // aft face tilted down toward the helm
-	const vhf = box( 0.2, 0.06, 0.02 );
-	vhf.applyMatrix4( new Matrix4().makeTranslation( - 0.18, 0, - 0.155 ) );
-	vhf.applyMatrix4( face );
-	kit.add( 'fittings', vhf, { color: 0x111214, rough: 0.4 } );
-	const lcd = new PlaneGeometry( 0.09, 0.03 );
-	lcd.applyMatrix4( new Matrix4().makeRotationY( Math.PI ) );
-	lcd.applyMatrix4( new Matrix4().makeTranslation( - 0.2, 0.005, - 0.168 ) ); // 3 mm proud of the radio face
-	lcd.applyMatrix4( face );
-	kit.add( 'glow', lcd, { color: 0x7dff9a, rough: 0.2, pattern: 6 } );
-	for ( const k of [ - 0.06, 0.1, 0.26 ] ) {
+	// overhead console with VHF radio above the windshield, cabin dome light (under a roof only)
+	if ( roofed ) {
 
-		const knob = cylinder( 0.012, 0.012, 0.02, 10 );
-		knob.applyMatrix4( new Matrix4().makeRotationX( Math.PI / 2 ) );
-		knob.applyMatrix4( new Matrix4().makeTranslation( k, 0, - 0.16 ) );
-		knob.applyMatrix4( face );
-		kit.add( 'fittings', knob, STAINLESS );
+		const oz = 1.02, oy = HOUSE.roofUnderY - 0.07;
+		const oc = roundedBox( 0.9, 0.13, 0.3, 0.02, 1 );
+		oc.applyMatrix4( mat4( - 0.15, oy, oz, - 0.25, 0, 0 ) );
+		kit.add( 'fittings', oc, { color: 0x24262a, rough: 0.6 } );
+		const face = mat4( - 0.15, oy, oz, - 0.25, 0, 0 ); // aft face tilted down toward the helm
+		const vhf = box( 0.2, 0.06, 0.02 );
+		vhf.applyMatrix4( new Matrix4().makeTranslation( - 0.18, 0, - 0.155 ) );
+		vhf.applyMatrix4( face );
+		kit.add( 'fittings', vhf, { color: 0x111214, rough: 0.4 } );
+		const lcd = new PlaneGeometry( 0.09, 0.03 );
+		lcd.applyMatrix4( new Matrix4().makeRotationY( Math.PI ) );
+		lcd.applyMatrix4( new Matrix4().makeTranslation( - 0.2, 0.005, - 0.168 ) ); // 3 mm proud of the radio face
+		lcd.applyMatrix4( face );
+		kit.add( 'glow', lcd, { color: 0x7dff9a, rough: 0.2, pattern: 6 } );
+		for ( const k of [ - 0.06, 0.1, 0.26 ] ) {
+
+			const knob = cylinder( 0.012, 0.012, 0.02, 10 );
+			knob.applyMatrix4( new Matrix4().makeRotationX( Math.PI / 2 ) );
+			knob.applyMatrix4( new Matrix4().makeTranslation( k, 0, - 0.16 ) );
+			knob.applyMatrix4( face );
+			kit.add( 'fittings', knob, STAINLESS );
+
+		}
+
+		// microphone hanging from the VHF
+		const mic = roundedBox( 0.05, 0.08, 0.03, 0.01, 1 );
+		mic.translate( - 0.02, oy - 0.2, oz - 0.12 );
+		kit.add( 'fittings', mic, BLACK_PLASTIC );
+		kit.add( 'fittings', tube( [ V( - 0.05, oy - 0.04, oz - 0.15 ), V( - 0.08, oy - 0.1, oz - 0.14 ), V( - 0.04, oy - 0.14, oz - 0.13 ), V( - 0.02, oy - 0.16, oz - 0.12 ) ], 0.004, 16, 4 ), BLACK_PLASTIC );
+
+		// cabin dome light
+		const dl = cylinder( 0.08, 0.085, 0.012, 20 );
+		dl.translate( 0, HOUSE.roofUnderY - 0.006, 0.42 );
+		kit.add( 'glow', dl, { color: 0xffe6b8, rough: 0.4, pattern: 5 } );
 
 	}
-
-	// microphone hanging from the VHF
-	const mic = roundedBox( 0.05, 0.08, 0.03, 0.01, 1 );
-	mic.translate( - 0.02, oy - 0.2, oz - 0.12 );
-	kit.add( 'fittings', mic, BLACK_PLASTIC );
-	kit.add( 'fittings', tube( [ V( - 0.05, oy - 0.04, oz - 0.15 ), V( - 0.08, oy - 0.1, oz - 0.14 ), V( - 0.04, oy - 0.14, oz - 0.13 ), V( - 0.02, oy - 0.16, oz - 0.12 ) ], 0.004, 16, 4 ), BLACK_PLASTIC );
-
-	// cabin dome light
-	const dl = cylinder( 0.08, 0.085, 0.012, 20 );
-	dl.translate( 0, HOUSE.roofUnderY - 0.006, 0.42 );
-	kit.add( 'glow', dl, { color: 0xffe6b8, rough: 0.4, pattern: 5 } );
 
 	// cuddy door in the console face (port side)
 	const door = box( 0.5, 0.62, 0.01 );

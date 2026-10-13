@@ -23,6 +23,7 @@ export const MAX_NAME = 16;
 export const MAX_PLAYERS = 32;
 export const MAX_FRAME = 2048; // bytes; anything longer is dropped (and the client cut off)
 export const MODES = [ 'walk', 'swim', 'boat', 'deck' ];
+export const BOAT_TYPES = [ 'sloop', 'workboat', 'speedboat', 'trawler' ]; // game/Boats.js BOAT_IDS
 export const AVATARS = [ 'm1', 'm2', 'f1', 'f2' ]; // public/models/characters/player_<av>.glb
 export const MAX_CHAT = 120; // characters
 // the rod (state r): 0 put away, 1 held, 2 winding up, 3 the cast, 4 line out, 5 a fish on, 6 landing it
@@ -81,6 +82,7 @@ export function cleanState( s ) {
 		if ( ! vec( s.b, 7, WORLD_LIMIT ) || s.b.slice( 3 ).some( ( v ) => Math.abs( v ) > 1.001 ) ) return null;
 		out.b = [ ...s.b.slice( 0, 3 ).map( ( v ) => round( v ) ), ...s.b.slice( 3 ).map( ( v ) => round( v, 1000 ) ) ];
 		out.bh = finite( s.bh, 5 ) ? round( s.bh ) : 0;
+		if ( BOAT_TYPES.includes( s.bt ) ) out.bt = s.bt;
 
 	}
 

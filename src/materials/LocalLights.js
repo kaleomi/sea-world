@@ -236,26 +236,26 @@ export class LocalLights {
 }
 
 // Boat lights in the hull frame: warm cabin dome, instrument glow, navigation lights (red port,
-// green starboard, white masthead and stern). Positions follow the boat's world matrix.
+// green starboard, white masthead and stern), where the boat type has them (BoatModel.lightPoints;
+// placeBoatLights() moves them when the boat changes). Positions follow the boat's world matrix.
 export function addBoatLights( lights, boat ) {
 
-	const L = boat.lines;
 	const obj = boat.group;
-	const sternY = L.sheerY( 0 ) + 0.1;
 	const defs = [
-		{ p: [ 0, 2.24, 0.42 ], color: [ 1.0, 0.84, 0.62 ], intensity: 0.9, range: 5.5, kind: 'boatDome' },
-		{ p: [ - 0.45, 1.5, 1.12 ], color: [ 0.45, 0.75, 1.0 ], intensity: 0.12, range: 2.2, kind: 'boatInstruments' },
-		{ p: [ 0.47, 3.45, - 0.47 ], color: [ 1.0, 0.06, 0.03 ], intensity: 1.4, range: 8, kind: 'boatNav', side: [ 1, 0, 0 ] },
-		{ p: [ - 0.47, 3.45, - 0.47 ], color: [ 0.05, 1.0, 0.3 ], intensity: 1.4, range: 8, kind: 'boatNav', side: [ - 1, 0, 0 ] },
-		{ p: [ 0, 3.97, - 0.5 ], color: [ 1.0, 0.95, 0.85 ], intensity: 1.2, range: 8, kind: 'boatNav' },
-		{ p: [ 0, sternY, L.zAft - 0.05 ], color: [ 1.0, 0.95, 0.85 ], intensity: 0.8, range: 7, kind: 'boatNav' },
+		{ key: 'dome', color: [ 1.0, 0.84, 0.62 ], intensity: 0.9, range: 5.5, kind: 'boatDome' },
+		{ key: 'instruments', color: [ 0.45, 0.75, 1.0 ], intensity: 0.12, range: 2.2, kind: 'boatInstruments' },
+		{ key: 'port', color: [ 1.0, 0.06, 0.03 ], intensity: 1.4, range: 8, kind: 'boatNav', side: [ 1, 0, 0 ] },
+		{ key: 'starboard', color: [ 0.05, 1.0, 0.3 ], intensity: 1.4, range: 8, kind: 'boatNav', side: [ - 1, 0, 0 ] },
+		{ key: 'masthead', color: [ 1.0, 0.95, 0.85 ], intensity: 1.2, range: 8, kind: 'boatNav' },
+		{ key: 'stern', color: [ 1.0, 0.95, 0.85 ], intensity: 0.8, range: 7, kind: 'boatNav' },
 	];
 	const out = [];
 	for ( const d of defs ) {
 
-		const local = new THREE.Vector3( ...d.p );
+		const local = new THREE.Vector3();
 		const localDir = d.side ? new THREE.Vector3( ...d.side ) : null;
 		const src = {
+			key: d.key, local,
 			position: new THREE.Vector3(), color: new THREE.Color( ...d.color ), intensity: d.intensity, range: d.range, kind: d.kind,
 			dir: localDir ? new THREE.Vector3() : null, cosInner: localDir ? 0.25 : undefined, cosOuter: localDir ? - 0.2 : undefined,
 			update() {
@@ -266,12 +266,27 @@ export function addBoatLights( lights, boat ) {
 
 			},
 		};
-		src.update();
-		out.push( lights.add( src ) );
+		out.push( src );
+		lights.add( src );
 
 	}
 
+	placeBoatLights( out, boat );
 	return out;
+
+}
+
+// put the boat lights where this boat type has them (switched off where it has none)
+export function placeBoatLights( srcs, boat ) {
+
+	for ( const s of srcs ) {
+
+		const p = boat.lightPoints && boat.lightPoints[ s.key ];
+		s.scale = p ? 1 : 0;
+		if ( p ) s.local.set( p[ 0 ], p[ 1 ], p[ 2 ] );
+		s.update();
+
+	}
 
 }
 

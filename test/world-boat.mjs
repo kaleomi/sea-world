@@ -1,6 +1,7 @@
 // Boat stream test: builds the procedural lobster boat (BoatModel) over a plain ground plane and
 // renders it from a few angles at 2560x1267 with engine sun shadows.
-//   node test/world-boat.mjs [outPrefix]     -> <outPrefix>-{side,deck,helm,stern,bow}.png
+//   node test/world-boat.mjs [outPrefix] [type]     -> <outPrefix>-{side,deck,helm,stern,bow}.png
+// type: a BOAT_LOOKS key (workboat, sloop, speedboat, trawler)
 import './headless.mjs';
 import { worldHarness, done } from './world-harness.mjs';
 import { Material } from '../src/engine/render/Material.js';
@@ -11,7 +12,7 @@ const H = await worldHarness( { width: 2560, height: 1267 } );
 const { E, G, scene } = H;
 
 const t0 = performance.now();
-const boat = new BoatModel();
+const boat = new BoatModel( process.argv[ 3 ] || 'workboat' );
 console.log( 'boat built in', ( performance.now() - t0 ).toFixed( 0 ), 'ms, triangles', boat.triangleCount, 'draft', boat.dimensions.draft.toFixed( 2 ) );
 
 // the boat floats on its design waterline (y = 0): put a sandy "sea floor" plane just under the keel
@@ -27,8 +28,9 @@ boat.group.updateMatrixWorld( true );
 boat.setSteering( 0.3 );
 boat.setThrottle( 0.5 );
 boat.setPropellerRPM( 900 );
+boat.sailing = { side: 1, angle: 0.55, fill: 1 }; // the sailboat on a reach, boom out to port
 if ( G.time ) G.time.value = 3.7;
-for ( let i = 0; i < 30; i ++ ) boat.update( 1 / 30 );
+for ( let i = 0; i < 120; i ++ ) boat.update( 1 / 30 );
 boat.group.updateMatrixWorld( true );
 
 const W = ( x, y, z ) => { const v = new E.Vector3( x, y, z ).applyMatrix4( boat.group.matrixWorld ); return [ v.x, v.y, v.z ]; };

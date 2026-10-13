@@ -111,7 +111,8 @@ const TIPS = {
 	full: t( 'Your cooler is <b>full</b>. Sell to Joe, or buy a bigger hold from Marta at the chandlery.' ),
 	boat: t( 'Your boat. <kbd>E</kbd> to board, <kbd>E</kbd> again at the wheel to drive (<kbd>W</kbd><kbd>S</kbd> throttle, <kbd>A</kbd><kbd>D</kbd> steer, <kbd>C</kbd> cruise control). Diesel is sold by Marta.' ),
 	joe: t( '<b>Joe</b> buys your fish. <kbd>E</kbd> to see what he will pay.' ),
-	marta: t( '<b>Marta</b> sells upgrades and diesel. <kbd>E</kbd> to see her stock.' ),
+	sail: t( 'Your sailboat. <kbd>E</kbd> to board, <kbd>E</kbd> again at the tiller to sail: <kbd>W</kbd> raises the sails, <kbd>A</kbd><kbd>D</kbd> steer, <kbd>C</kbd> keeps them up. It can\'t sail straight into the wind: go across it (the boom shows which way it blows). No fuel needed.' ),
+	marta: t( '<b>Marta</b> sells boats, upgrades and diesel. <kbd>E</kbd> to see her stock.' ),
 };
 
 const h = ( tag, cls, html ) => {
@@ -349,7 +350,7 @@ export class Guide {
 		if ( p.mode === 'walk' ) {
 
 			const bt = app.boatCtl;
-			if ( bt && Math.hypot( bt.position.x - p.position.x, bt.position.z - p.position.z ) < 9 ) this.tip( 'boat' );
+			if ( bt && Math.hypot( bt.position.x - p.position.x, bt.position.z - p.position.z ) < 9 ) this.tip( s.stats.sail ? 'sail' : 'boat' );
 			for ( const v of g.vendors ) if ( v.inRange( p.position ) ) if ( v.kind !== 'quest' ) this.tip( v.kind === 'buyer' ? 'joe' : 'marta' );
 
 		}
