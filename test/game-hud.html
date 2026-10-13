@@ -124,6 +124,29 @@ if ( view === 'dex' ) {
 if ( view === 'shop' ) { state.buy( 'reel' ); h.openStand( { kind: 'shop', name: 'Marta · Chandlery', greeting: 'Line, reels, a bigger hold, diesel. What do you need?' } ); }
 if ( view === 'stand' ) h.openStand( { name: 'Joe · Fish buyer', greeting: 'Let\'s see what you caught. Fair prices, cash.' } );
 if ( view === 'fight' ) ui.toast( 'Fish on!' );
+// ?view=start: the start screen with the name and avatar; ?view=chat: the chat log, its line open
+if ( view === 'start' ) {
+
+	const { UI } = await import( '../src/ui/UI.js' );
+	const { mountProfile } = await import( '../src/net/StartProfile.js' );
+	const u = new UI();
+	await u.hideLoader();
+	const inner = u.startEl.querySelector( '.tw-start-inner' );
+	window.__profile = mountProfile( inner, inner.querySelector( '.tw-start-cta' ) );
+	u.showStartOverlay( () => ( window.__started = window.__profile.get() ) );
+
+}
+if ( view === 'chat' ) {
+
+	const { Chat } = await import( '../src/net/Chat.js' );
+	const chat = new Chat( hud, { say: ( s ) => ( chat.add( 'Kaleomi', s, '#3fb6c8', true ), true ) } );
+	chat.system( '阿海 来到了这片海' );
+	chat.add( '阿海', '你在哪个岛？', '#5fbf6a' );
+	chat.add( 'Kaleomi', '珊瑚环礁这边，刚钓到一条鬼头刀', '#3fb6c8', true );
+	chat.add( 'Marisol', 'nice!! 我也过去', '#9b6ad6' );
+	chat.show();
+
+}
 if ( [ 'catch', 'record', 'newspecies', 'full', 'milestone', 'legend' ].includes( view ) ) {
 
 	// the landed-fish backdrop the card sits beside (in game: the real fish on the line)

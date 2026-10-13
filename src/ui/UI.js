@@ -2161,6 +2161,7 @@ export class UI {
 						${ row( k( 'RMB' ), t( 'Reel in an empty line' ) ) }
 						${ row( k( 'I' ), t( 'Cooler and fish log' ) ) }
 						${ row( k( 'M' ), t( 'Map' ) ) }
+						${ row( k( 'Enter' ), t( 'Chat<small>Talk to everyone at sea</small>' ) ) }
 						${ row( k( 'L' ), t( 'Flashlight' ) ) }
 						${ row( k( 'N' ), t( 'Mute' ) ) }
 					</section>
@@ -3188,9 +3189,13 @@ export class UI {
 
 			const go = ( e ) => {
 
+				// the start screen's own controls (the player's name, the avatar choice) aren't the start
+				if ( e.type === 'click' && e.target.closest && e.target.closest( '.np-profile' ) ) return;
 				if ( e.type === 'keydown' ) {
 
 					if ( e.key !== 'Enter' && e.code !== 'Space' ) return;
+					if ( e.code === 'Space' && e.target && e.target.tagName === 'INPUT' ) return;
+					if ( e.isComposing ) return;
 					e.preventDefault();
 					e.stopPropagation();
 

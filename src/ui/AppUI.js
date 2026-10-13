@@ -351,7 +351,8 @@ export class AppUI {
 		const gameWindowOpen = () => {
 
 			const hud = game && game.hud;
-			return !! ( hud && ( hud.invOpen || hud.standOpen || hud.catchOpen ) ) || !! ( game && game.mapOpen ) || !! ( game && game.guide && game.guide.open );
+			const chat = app.net && app.net.chat;
+			return !! ( hud && ( hud.invOpen || hud.standOpen || hud.catchOpen ) ) || !! ( game && game.mapOpen ) || !! ( game && game.guide && game.guide.open ) || !! ( chat && chat.open );
 
 		};
 		ui.escapeGuard = gameWindowOpen;

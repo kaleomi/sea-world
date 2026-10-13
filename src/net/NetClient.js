@@ -1,12 +1,12 @@
-import { PROTOCOL, TICK_HZ } from './Protocol.js';
+import { PROTOCOL, TICK_HZ, AVATARS, cleanAvatar, cleanChat } from './Protocol.js';
 
 // The game's end of the multiplayer link (server/): one WebSocket to a shared sea.
 //   const net = new NetClient();
-//   net.connect( 'ws://127.0.0.1:5191', { name, color } );  net.disconnect()
+//   net.connect( 'ws://127.0.0.1:5191', { name, color, av } );  net.disconnect()
 //   net.sendState( state ) every frame (sent TICK_HZ a second, less when nothing changes)
-//   net.sendCatch( { species, kg, legend } )
+//   net.sendCatch( { species, kg, legend } );  net.sendChat( text )
 //   net.sample( peer, out ) the peer's state INTERP s in the past, interpolated between snapshots
-//   net.on( 'join' | 'leave' | 'catch' | 'status', fn )
+//   net.on( 'join' | 'leave' | 'catch' | 'chat' | 'status', fn )
 // status: 'off' | 'connecting' | 'online' | 'retrying' | 'error' (error: net.error = 'full' |
 // 'version' | 'bad' | 'unreachable'). A dropped link retries with backoff until disconnect().
 export const INTERP = 0.2; // s behind the newest snapshot: two ticks, so there is nearly always a pair to blend
@@ -34,7 +34,7 @@ export class NetClient {
 		this.status = 'off';
 		this.error = null;
 		this.id = null;
-		this.peers = new Map(); // id -> { id, name, color, snaps: [ { t, s } ] }
+		this.peers = new Map(); // id -> { id, name, color, av, snaps: [ { t, s } ] }
 		this._ws = null;
 		this._handlers = {};
 		this._sentAt = - Infinity;
@@ -72,11 +72,11 @@ export class NetClient {
 
 	}
 
-	connect( url, { name, color } = {} ) {
+	connect( url, { name, color, av } = {} ) {
 
 		this.disconnect();
 		this.url = url;
-		this.hello = { t: 'hello', v: PROTOCOL, name, color };
+		this.hello = { t: 'hello', v: PROTOCOL, name, color, av };
 		this._wanted = true;
 		this._open();
 
@@ -222,14 +222,21 @@ export class NetClient {
 			const p = this.peers.get( m.id );
 			if ( p ) this._emit( 'catch', p, m );
 
+		} else if ( m.t === 'chat' && typeof m.text === 'string' ) {
+
+			const p = this.peers.get( m.id );
+			const text = cleanChat( m.text );
+			if ( p && text ) this._emit( 'chat', p, text );
+
 		}
 
 	}
 
-	_join( { id, name, color } ) {
+	_join( { id, name, color, av } ) {
 
 		if ( id === this.id || this.peers.has( id ) ) return;
-		const p = { id, name, color, snaps: [] };
+		// (an older server sends no avatar: one picked from the id)
+		const p = { id, name, color, av: cleanAvatar( av ) || AVATARS[ id % AVATARS.length ], snaps: [] };
 		this.peers.set( id, p );
 		this._emit( 'join', p );
 
@@ -255,9 +262,19 @@ export class NetClient {
 
 	}
 
+	// a chat line; returns the cleaned text that went, or null
+	sendChat( text ) {
+
+		const s = cleanChat( text );
+		if ( ! s || ! this.online ) return null;
+		this._ws.send( JSON.stringify( { t: 'chat', text: s } ) );
+		return s;
+
+	}
+
 	// The peer's state at render time (now - INTERP), blended between the two snapshots around it
 	// (held at the newest when the stream stalls; out = null until the first one arrives). Returns
-	// { m, p, yaw, b?, bh?, l?, age } where age is how stale the newest snapshot is (s).
+	// { m, p, yaw, b?, bh?, l?, r, k?, age } where age is how stale the newest snapshot is (s).
 	sample( peer, out = {} ) {
 
 		const S = peer.snaps;
@@ -271,17 +288,19 @@ export class NetClient {
 		// a mode change (boarding, diving in) snaps rather than sliding between the two
 		const s = A.m === B.m ? null : B;
 		out.m = B.m;
-		out.p = s ? [ ...B.p ] : lerp3( A.p, B.p, k, out.p );
+		out.p = s ? [ ...B.p ] : lerp3( A.p, B.p, k, out.p || [ 0, 0, 0 ] );
 		out.yaw = s ? B.yaw : lerpAngle( A.yaw, B.yaw, k );
 		if ( B.b ) {
 
 			const jump = ! A.b || Math.hypot( A.b[ 0 ] - B.b[ 0 ], A.b[ 2 ] - B.b[ 2 ] ) > 30; // a reset to the dock
-			out.b = jump ? [ ...B.b ] : nlerpPose( A.b, B.b, k, out.b );
+			out.b = jump ? [ ...B.b ] : nlerpPose( A.b, B.b, k, out.b || new Array( 7 ) );
 			out.bh = jump ? B.bh : ( A.bh ?? 0 ) + ( ( B.bh ?? 0 ) - ( A.bh ?? 0 ) ) * k;
 
 		} else out.b = null;
 
-		out.l = B.l ? ( A.l && ! s ? lerp3( A.l, B.l, k, out.l ) : [ ...B.l ] ) : null;
+		out.l = B.l ? ( A.l && ! s ? lerp3( A.l, B.l, k, out.l || [ 0, 0, 0 ] ) : [ ...B.l ] ) : null;
+		out.r = B.r | 0;
+		out.k = B.k ? ( A.k && A.r === B.r ? lerp3( A.k, B.k, k, out.k || [ 0, 0, 0 ] ) : [ ...B.k ] ) : null;
 		out.age = this.now() - S[ S.length - 1 ].t;
 		return out;
 

@@ -20,6 +20,7 @@ const EXT = 1280; // metres covered by the bake
 const X0 = - EXT / 2, Z0 = - 180 - EXT / 2; // world at canvas (0, 0): the island sits north of the bay
 const ROWS_PER_FRAME = 48;
 const ISLE_N = 256; // baked canvas size for each outer island (px)
+const EDGE_FADE = 0.1; // the outer part of each bake (of its size) that fades into the sea behind it
 
 const CSS = /* css */`
 .gm-map { position: absolute; right: var(--tw-edge); bottom: var(--tw-edge); width: calc(184 * var(--tw-u)); height: calc(184 * var(--tw-u));
@@ -256,6 +257,7 @@ export class Minimap {
 
 		const d = B.img.data;
 		const end = Math.min( N, B.row + ROWS_PER_FRAME );
+		const FADE = N * EDGE_FADE;
 		for ( let py = B.row; py < end; py ++ ) for ( let px = 0; px < N; px ++ ) {
 
 			const x = X0 + ( px + 0.5 ) / PPM, z = Z0 + ( py + 0.5 ) / PPM;
@@ -301,8 +303,10 @@ export class Minimap {
 
 			}
 
+			// the edges fade out, so the square of each bake melts into the open sea behind it (no seams)
+			const edge = Math.min( px, py, N - 1 - px, N - 1 - py );
 			const o = ( py * N + px ) * 4;
-			d[ o ] = c[ 0 ]; d[ o + 1 ] = c[ 1 ]; d[ o + 2 ] = c[ 2 ]; d[ o + 3 ] = 255;
+			d[ o ] = c[ 0 ]; d[ o + 1 ] = c[ 1 ]; d[ o + 2 ] = c[ 2 ]; d[ o + 3 ] = 255 * smooth( 0, FADE, edge );
 
 		}
 

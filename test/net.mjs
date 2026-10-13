@@ -1,12 +1,14 @@
 // Plain-node tests of multiplayer (no GPU, no DOM): the wire checks (src/net/Protocol.js), the
 // server's sea (server/Sea.js) and the game's client (src/net/NetClient.js) joined through an
 // in-memory socket, then once over a real WebSocket when the server's dependency is installed.
-import { cleanName, cleanState, cleanCatch, cleanColor, PROTOCOL, MAX_FRAME } from '../src/net/Protocol.js';
+import { cleanName, cleanState, cleanCatch, cleanColor, cleanAvatar, cleanChat, AVATARS, MAX_CHAT, PROTOCOL, MAX_FRAME } from '../src/net/Protocol.js';
 import { Sea } from '../server/Sea.js';
 import { NetClient, INTERP, lerpAngle, errorText } from '../src/net/NetClient.js';
 import { RemotePlayers } from '../src/net/RemotePlayers.js';
 import { defaultServer, normalizeServer } from '../src/net/Multiplayer.js';
-import { Scene, PerspectiveCamera } from '../src/engine/index.js';
+import { Scene, PerspectiveCamera, Group } from '../src/engine/index.js';
+import { createRodMaterial, buildRodGeometry, buildBobberGeometry, buildLineGeometry, LINE_SEGS } from '../src/game/FishingRod.js';
+import { createLineMaterial } from '../src/game/GameMaterials.js';
 import { BoatModel } from '../src/world/BoatModel.js';
 
 let fails = 0;
@@ -27,6 +29,13 @@ ok( cs && cs.p[ 0 ] === 1.23 && Math.abs( cs.yaw - ( 7 - 2 * Math.PI ) ) < 1e-3 
 ok( cleanState( { ...good, m: 'fly' } ) === null && cleanState( { ...good, p: [ 0, NaN, 0 ] } ) === null && cleanState( { ...good, p: [ 1e9, 0, 0 ] } ) === null, 'state: bad mode, NaN or far-off positions are refused' );
 ok( cleanState( { ...good, b: [ 0, 0, 0, 2, 0, 0, 0 ] } ) === null, 'state: a quaternion out of range is refused' );
 ok( cleanState( { m: 'walk', p: [ 0, 1, 0 ], yaw: 0, l: [ 1, 1, 1 ] } ).l === undefined, 'state: no deck position when ashore' );
+const walker = { m: 'walk', p: [ 0, 1, 0 ], yaw: 0 };
+const fishing = cleanState( { ...walker, r: 4, k: [ 20.123, 0, 5 ] } );
+ok( fishing.r === 4 && fishing.k[ 0 ] === 20.12, 'state: the rod state and the end of the line are kept' );
+ok( cleanState( { ...walker, r: 2, k: [ 1, 0, 1 ] } ).k === undefined && cleanState( { ...walker, r: 4, k: [ 900, 0, 0 ] } ).k === undefined, 'state: no line end before the cast, or far off' );
+ok( cleanState( { ...walker, r: 9 } ).r === undefined && cleanState( { ...walker, r: 1.5 } ).r === undefined && cleanState( { ...walker, r: 0 } ).r === undefined, 'state: bad rod states are dropped' );
+ok( cleanAvatar( 'f2' ) === 'f2' && cleanAvatar( 'x' ) === null && cleanAvatar( undefined ) === null, 'avatars: one of the four, or none' );
+ok( cleanChat( '  hi\n\tthere  ' ) === 'hi there' && cleanChat( '   ' ) === null && cleanChat( 'x'.repeat( 500 ) ).length === MAX_CHAT && cleanChat( '你好，钓到了吗？' ) === '你好，钓到了吗？', 'chat: one line, trimmed, at most 120 characters, Chinese passes' );
 const isFish = ( id ) => id === 'tuna';
 ok( cleanCatch( { species: 'tuna', kg: 12.345, legend: 'x<y' }, isFish ).legend === undefined && cleanCatch( { species: 'shark', kg: 1 }, isFish ) === null && cleanCatch( { species: 'tuna', kg: - 1 }, isFish ) === null, 'catch: real species and weights only' );
 
@@ -177,6 +186,36 @@ function hub( sea ) {
 
 ok( Math.abs( lerpAngle( 3.0, - 3.0, 0.5 ) - Math.PI ) < 0.15, 'angles blend the short way round' );
 
+// ---- avatars and chat
+{
+
+	const sea = new Sea( { now: () => clock } );
+	const WS = hub( sea );
+	const a = new NetClient( { WebSocketImpl: WS, now: () => clock } ), b = new NetClient( { WebSocketImpl: WS, now: () => clock } );
+	ok( a.sendChat( 'hello' ) === null, 'chat: nothing is sent before we are online' );
+	a.connect( 'ws://x', { name: 'Ana', av: 'f2' } );
+	await flush(); await flush();
+	b.connect( 'ws://x', { name: 'Kai', av: 'bogus' } );
+	await flush(); await flush();
+	ok( b.peers.get( a.id ).av === 'f2' && AVATARS.includes( a.peers.get( b.id ).av ), 'avatars: the one picked reaches the others (a bad one becomes a default)' );
+	const heard = { a: [], b: [] };
+	a.on( 'chat', ( p, s ) => heard.a.push( s ) );
+	b.on( 'chat', ( p, s ) => heard.b.push( `${ p.name }: ${ s }` ) );
+	ok( a.sendChat( '  hi   there ' ) === 'hi there', 'chat: the line is cleaned before it goes' );
+	await flush(); await flush();
+	ok( heard.b[ 0 ] === 'Ana: hi there' && heard.a.length === 0, 'chat: a line reaches the others, not back to its sender' );
+	for ( let i = 0; i < 6; i ++ ) a.sendChat( 'spam ' + i );
+	await flush(); await flush();
+	ok( heard.b.length === 3 && a.online, `chat: a burst of three, then the rest are dropped (${ heard.b.length } heard), without cutting them off` );
+	clock += 0.75;
+	a.sendChat( 'later' );
+	await flush(); await flush();
+	ok( heard.b.at( - 1 ) === 'Ana: later', 'chat: a moment later they can talk again' );
+	a.disconnect(); b.disconnect();
+	await flush(); await flush();
+
+}
+
 // ---- once over a real WebSocket (needs `npm install` in server/)
 let startServer = null;
 try {
@@ -246,6 +285,59 @@ if ( startServer && typeof WebSocket !== 'undefined' ) {
 	ok( ! v.boat.visible && v.figure.position.x === 3 && v.figure.position.y === 2, 'remote: ashore at their feet; a boat on top of ours (the shared berth) is hidden' );
 	h.leave( { id: 2 } );
 	ok( rp.views.size === 0 && masks.length === 0 && scene.children.length === 1, 'remote: leaving takes the boat, figure and hull mask away' );
+
+}
+
+// ---- their avatar, rod, line and a landed fish (a stand-in for the skinned model; the real rod kit)
+{
+
+	const scene = new Scene(), camera = new PerspectiveCamera( 60, 1.6, 0.1, 1000 );
+	camera.position.set( 0, 2, - 10 );
+	const boat = new BoatModel();
+	scene.add( boat.group );
+	const h = {}, cur = {};
+	const net = { on: ( e, f ) => ( h[ e ] = f ), sample: ( p, o ) => ( cur[ p.id ] ? Object.assign( o, cur[ p.id ] ) : null ) };
+	const played = [];
+	let model = null;
+	const fakeModel = () => {
+
+		const world = new Float32Array( 32 );
+		world.set( [ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0.2, 1.2, 0.3, 1 ], 16 ); // the left hand, in model space
+		const clips = new Map( [ 'idle_neutral_01', 'umbrella_idle_01', 'walk_neutral_01', 'cheer_01' ].map( ( n ) => [ n, { name: n } ] ) );
+		return { group: new Group(), clips, layers: [], play: ( n ) => played.push( n ), update() {}, hold() {},
+			nodeIndex: ( n ) => ( n === 'Bip01 L Hand' ? 1 : - 1 ), nodeMatrix: ( i ) => world.subarray( i * 16, i * 16 + 16 ), dispose() { this.disposed = true; } };
+
+	};
+	const rodKit = {
+		rodGeometry: buildRodGeometry(), rodMaterial: createRodMaterial,
+		lineGeometry: buildLineGeometry( LINE_SEGS ), lineMaterial: () => createLineMaterial( LINE_SEGS ),
+		bobberGeometry: buildBobberGeometry(), bobberMaterial: {},
+	};
+	const shown = [];
+	const catchDisplay = () => ( { show: ( sp ) => shown.push( sp ), hide() {} } );
+	const rp = new RemotePlayers( { net, scene, camera, boat, figureMaterial: {}, loadAvatar: async () => ( model = fakeModel() ), rodKit, catchDisplay } );
+	h.join( { id: 3, name: 'Mo', color: '#ffffff', av: 'm2' } );
+	await flush(); await flush();
+	const v = rp.views.get( 3 );
+	ok( v.avatar === model && v.figure.children.includes( model.group ) && v.hand === 1, 'remote: their avatar takes the stand-in figure\'s place once it has loaded' );
+	cur[ 3 ] = { ...walker, r: 0 };
+	rp.update( 0.016 );
+	ok( played.at( - 1 ) === 'idle_neutral_01' && ( ! v.rod || ! v.rod.visible ), 'remote: no rod out: standing idle, no rod drawn' );
+	cur[ 3 ] = { ...walker, r: 4, k: [ 0, 0, 15 ] };
+	for ( let i = 0; i < 30; i ++ ) rp.update( 0.05 );
+	const R = v.rod.matrix.elements; // column 1: along the blank; column 3: the butt
+	ok( v.rod.visible && v.line.visible && v.bobber.visible && v.bobber.position.z === 15 && played.at( - 1 ) === 'umbrella_idle_01', 'remote: line in the water: the rod in hand, the line out to the bobber, the holding pose' );
+	ok( R[ 6 ] > 0.3 && R[ 5 ] > 0.3 && Math.abs( R[ 12 ] - 0.2 ) < 0.5 && Math.abs( R[ 13 ] - 2.2 ) < 0.5, `remote: the rod is held at their hand, raised and pointing out toward the line (${ [ R[ 4 ], R[ 5 ], R[ 6 ], R[ 12 ], R[ 13 ], R[ 14 ] ].map( ( x ) => x.toFixed( 2 ) ) })` );
+	const L = v.line.material.uniforms;
+	ok( L.lineB.value.z === 15 && L.lineA.value.y > 2.5, 'remote: the line runs from the rod tip to the bobber' );
+	rp.landed( 3, 'mahi', 8 );
+	for ( let i = 0; i < 20; i ++ ) rp.update( 0.05 );
+	ok( shown.includes( 'mahi' ) && played.at( - 1 ) === 'cheer_01' && ! v.bobber.visible && v.line.visible, 'remote: a fish they land hangs on their line, and they cheer' );
+	cur[ 3 ] = { ...walker, r: 0, k: null };
+	for ( let i = 0; i < 80; i ++ ) rp.update( 0.05 );
+	ok( ! v.rod.visible && ! v.line.visible && played.at( - 1 ) === 'idle_neutral_01', 'remote: rod away: it is hidden and they stand idle again' );
+	h.leave( { id: 3 } );
+	ok( rp.views.size === 0 && model.disposed && scene.children.length === 1, 'remote: leaving takes their avatar, rod, line and bobber away' );
 
 }
 

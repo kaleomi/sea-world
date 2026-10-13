@@ -23,7 +23,7 @@ const OUT = process.argv[ 3 ] || '/tmp/character-smoke.png';
 const CLIP = process.argv[ 4 ] || null;
 const YAW = Number( process.argv[ 5 ] || 0 ) * Math.PI / 180;
 
-// embedded images -> RGBA8 with macOS sips (no image decoding in Node)
+// embedded images -> RGBA8 with macOS sips, or ImageMagick elsewhere (no image decoding in Node)
 const tmp = mkdtempSync( join( tmpdir(), 'char-img-' ) );
 let nImg = 0;
 globalThis.__assetImage = async ( bytes, mime ) => {
@@ -31,7 +31,8 @@ globalThis.__assetImage = async ( bytes, mime ) => {
 	const src = join( tmp, 'i' + ( nImg ++ ) + ( mime === 'image/png' ? '.png' : '.jpg' ) );
 	writeFileSync( src, bytes );
 	const out = src + '.bmp';
-	execFileSync( 'sips', [ '-s', 'format', 'bmp', src, '--out', out ], { stdio: 'ignore' } );
+	if ( process.platform === 'darwin' ) execFileSync( 'sips', [ '-s', 'format', 'bmp', src, '--out', out ], { stdio: 'ignore' } );
+	else execFileSync( 'convert', [ src, 'BMP3:' + out ], { stdio: 'ignore' } );
 	return readBMP( readFileSync( out ) );
 
 };

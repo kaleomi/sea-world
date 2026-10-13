@@ -4,6 +4,8 @@ import { UI } from './ui/UI.js';
 import { AppUI } from './ui/AppUI.js';
 import { t } from './i18n/index.js';
 import { DEV } from './core/DevMode.js';
+import { mountProfile } from './net/StartProfile.js';
+import { saveProfile } from './net/Multiplayer.js';
 
 // ?bench runs in background tabs too (automation): rAF does not fire in a hidden page
 if ( /[?&]bench\b/.test( location.search ) ) {
@@ -36,10 +38,21 @@ app.init( ( p, text, until ) => ui.setLoading( p, text, until ) ).then( async ()
 		if ( app.qs.has( 'shots' ) ) window.__job = window.__bench.shots( app.qs.get( 'shots' ).split( ',' ), { tag: app.qs.get( 'tag' ) || 'shot', dt: Number( app.qs.get( 'dt' ) ) || 0, seq: Number( app.qs.get( 'seq' ) ) || 1, every: Number( app.qs.get( 'every' ) ) || 1 } );
 
 	} else app.start();
+	// who you are at sea: asked on the start screen, and the game goes online as it starts
+	const inner = ui.startEl.querySelector( '.tw-start-inner' );
+	const profile = app.qs.has( 'noNet' ) || app.qs.has( 'bench' ) ? null : mountProfile( inner, inner.querySelector( '.tw-start-cta' ) );
 	ui.showStartOverlay( () => {
 
 		app.input.requestLock();
 		if ( app.audio ) app.audio.resume();
+		if ( profile ) {
+
+			const me = profile.get();
+			saveProfile( me );
+			app.playing = true;
+			if ( app.net && ! [ 'online', 'connecting' ].includes( app.net.status ) ) app.net.connect( me );
+
+		}
 
 	} );
 

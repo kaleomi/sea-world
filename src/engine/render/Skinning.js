@@ -215,23 +215,24 @@ export class SkinnedModel {
 	async _buildMeshes( materialOptions ) {
 
 		const g = this.gltf;
-		// textures (shared between materials that use the same image)
-		const texCache = new Map();
+		// textures (shared between materials that use the same image, and between models made from the
+		// same parsed GLB: several players with one avatar upload its textures once)
+		const texCache = g._skinTextures ||= new Map();
 		const tex = async ( info, srgb ) => {
 
 			if ( ! info ) return null;
 			const src = g.textures[ info.index ].source;
 			const key = src + ( srgb ? 's' : 'l' );
-			if ( ! texCache.has( key ) ) {
+			if ( ! texCache.has( key ) ) texCache.set( key, ( async () => {
 
 				const im = g.images[ src ];
 				const px = await decodeImage( im.bytes, im.mimeType );
 				const t = new Texture( { label: 'char' + src, width: px.width, height: px.height, format: srgb ? 'rgba8unorm-srgb' : 'rgba8unorm', data: px.data, mips: true, usage: [ 'sample', 'copyDst' ], sampler: 'anisoRepeat' } );
 				t.getGPU();
 				generateMipmaps( t );
-				texCache.set( key, t );
+				return t;
 
-			}
+			} )() );
 
 			return texCache.get( key );
 
@@ -482,6 +483,20 @@ export class SkinnedModel {
 		}
 
 		this.jointBuffer.write( D );
+
+	}
+
+	// a node's index by name (-1 if there is none), for nodeMatrix
+	nodeIndex( name ) {
+
+		return this.gltf.nodes.findIndex( ( n ) => n.name === name );
+
+	}
+
+	// a node's matrix in model space (column-major, a view into the pose: copy it to keep it)
+	nodeMatrix( i ) {
+
+		return this.world.subarray( i * 16, i * 16 + 16 );
 
 	}
 

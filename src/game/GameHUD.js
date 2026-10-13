@@ -7,6 +7,7 @@ import { LEGENDS, LEGEND_IDS, legendTitle } from './Legends.js';
 import { GIVERS, currentQuest, questProgress } from './Quests.js';
 import { LEAGUES, RIVALS, DURATION, standings } from './Tournament.js';
 import { errorText } from '../net/NetClient.js';
+import { DEV } from '../core/DevMode.js';
 import { t } from '../i18n/index.js';
 
 // DOM for the fishing game, in the look of the rest of the HUD (ui/ui.css tokens, .tw-glass):
@@ -481,9 +482,10 @@ export class GameHUD {
 			<h2>${ t( s.upgrades.hold > 0 ? 'Fish hold' : 'Cooler' ) }</h2>
 			<p class="gm-sub">${ t( '{n} fish · {kg} of {cap} kg · worth ${v}', { n: s.inventory.length, kg: s.holdKg.toFixed( 1 ), cap: s.stats.holdKg, v: s.holdValue } ) }</p>
 			<div class="gm-list">${ rows || `<div class="gm-empty">${ t( 'Nothing yet. Cast from the pier, the beach or the boat.' ) }</div>` }</div>
-			<div class="gm-foot"><button class="gm-btn is-ghost" data-dex>${ t( 'Fish log · {n} / {all}', { n: dex.species, all: FISH_IDS.length } ) }</button><button class="gm-btn is-ghost" data-online>${ this.onlineLabel() }</button><button class="gm-btn is-ghost" data-close>${ t( 'Close (I)' ) }</button></div>`;
+			<div class="gm-foot"><button class="gm-btn is-ghost" data-dex>${ t( 'Fish log · {n} / {all}', { n: dex.species, all: FISH_IDS.length } ) }</button>${ DEV.on ? `<button class="gm-btn is-ghost" data-online>${ this.onlineLabel() }</button>` : '' }<button class="gm-btn is-ghost" data-close>${ t( 'Close (I)' ) }</button></div>`;
 		this.inv.querySelector( '[data-close]' ).onclick = () => this.toggleInventory( false );
-		this.inv.querySelector( '[data-online]' ).onclick = () => {
+		const on = this.inv.querySelector( '[data-online]' );
+		if ( on ) on.onclick = () => {
 
 			this.invView = 'online';
 			this.renderInventory();

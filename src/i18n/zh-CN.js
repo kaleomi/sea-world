@@ -652,6 +652,13 @@ export const ZH_CN = {
 	'Disconnect': '断开',
 	'(you)': '（你）',
 	'Sailor': '水手',
+	'Your name at sea': '你在海上的名字',
+	'Chat<small>Talk to everyone at sea</small>': '聊天<small>和海上所有人说话</small>',
+	'Type a name': '输入名字',
+	'Choose this look': '选这个形象',
+	'Enter to send · Esc to cancel': 'Enter 发送 · Esc 取消',
+	'Say something to everyone at sea…': '对海上的所有人说点什么…',
+	'Not connected to the shared sea yet': '还没连上联机海域',
 	'{name} sailed into the shared sea': '{name} 驶入了这片海',
 	'{name} left the shared sea': '{name} 离开了这片海',
 	'Online · {n} other players on this sea': '已联机 · 这片海上还有 {n} 位玩家',
@@ -714,4 +721,11 @@ export const ZH_CN = {
 	'Silver giant': '银色巨鱼',
 	"A tarpon, a proper one. Off the west side where the water drops away.": '一条大海鲢，要够分量的。去岛西边水突然变深的地方找。',
 	"The old fishers talk about a red snapper the size of a child. Prove it's real.": '老渔夫们说有条红鲷有小孩那么大。证明给我看它是真的。',
+
+	// ── 上下船的按键提示（Player.js）─────────────────────────────────────
+	'Climb ladder': '爬梯子',
+	'Take the helm': '掌舵',
+	'Step ashore': '上岸',
+	'Jump overboard': '跳下船',
+	'Leave helm   ·   V  camera': '离开舵位   ·   V  切换视角',
 };

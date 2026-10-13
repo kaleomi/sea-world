@@ -1,16 +1,24 @@
 import { NetClient, errorText } from './NetClient.js';
 import { RemotePlayers } from './RemotePlayers.js';
-import { DEFAULT_PORT, cleanName } from './Protocol.js';
+import { DEFAULT_PORT, AVATARS, cleanName, cleanAvatar } from './Protocol.js';
 import { HOUSE } from '../world/boat/Wheelhouse.js';
 import { FISH } from '../game/FishTable.js';
 import { LEGENDS } from '../game/Legends.js';
+import { CatchDisplay } from '../game/CatchDisplay.js';
+import { createRodMaterial, buildRodGeometry, buildBobberGeometry, buildLineGeometry, LINE_SEGS } from '../game/FishingRod.js';
+import { createLineMaterial } from '../game/GameMaterials.js';
+import { SkinnedModel } from '../engine/render/Skinning.js';
+import { loadGLB } from '../engine/loaders/GLTF.js';
+import { Chat } from './Chat.js';
 import { t } from '../i18n/index.js';
 
 // Multiplayer in the game: the link to a shared sea (NetClient), the other players drawn in the world
-// (RemotePlayers), our state sent every frame, catches told both ways, and the settings (name,
-// colour, server) kept in localStorage 'tidewater.net'. The "Online" view of the inventory panel
-// (GameHUD.renderOnline) drives it. ?server=ws://host:port connects on load. A build can name its
-// public server (VITE_NET_SERVER=wss://..., e.g. in .env.production): the default for new players.
+// (RemotePlayers), our state (with the rod) sent every frame, catches and chat told both ways (Chat:
+// Enter to talk), and the settings (name, avatar, colour, server) kept in localStorage 'tidewater.net'.
+// The start screen asks for the name and avatar (main.js, saveProfile) and the game goes online as it
+// starts (app.playing); ?noNet stays offline, ?server=ws://host:port picks the server. The "Online" view
+// of the inventory panel (GameHUD.renderOnline, developer mode) changes the server. A build can name
+// its public server (VITE_NET_SERVER=wss://..., e.g. in .env.production): the default for new players.
 //   app.net = new Multiplayer( app );  app.net.update( dt ) after game.update, before query.update
 const KEY = 'tidewater.net';
 const COLORS = [ '#e2574c', '#f2a541', '#e8d44d', '#5fbf6a', '#3fb6c8', '#4f7fe0', '#9b6ad6', '#e070b0' ];
@@ -38,6 +46,9 @@ export function normalizeServer( input, loc = globalThis.location ) {
 
 }
 
+// the rod's state for the others (Protocol ROD_STATES)
+const ROD_CODE = { stowed: 0, idle: 1, windup: 2, flick: 3, flying: 4, floating: 4, retrieving: 4, fighting: 5, landing: 6 };
+
 const storage = () => {
 
 	try {
@@ -52,6 +63,36 @@ const storage = () => {
 
 };
 
+// what the start screen shows: { name, av } (name '' when none was chosen yet)
+export function loadProfile() {
+
+	try {
+
+		const s = JSON.parse( storage()?.getItem( KEY ) || '{}' ) || {};
+		return { name: cleanName( s.name ) || '', av: cleanAvatar( s.av ) || AVATARS[ 0 ] };
+
+	} catch ( e ) {
+
+		return { name: '', av: AVATARS[ 0 ] };
+
+	}
+
+}
+
+// the start screen's choice, kept with the other settings
+export function saveProfile( { name, av } ) {
+
+	try {
+
+		const s = JSON.parse( storage()?.getItem( KEY ) || '{}' ) || {};
+		if ( cleanName( name ) ) s.name = cleanName( name );
+		if ( cleanAvatar( av ) ) s.av = av;
+		storage()?.setItem( KEY, JSON.stringify( s ) );
+
+	} catch ( e ) { /* private mode */ }
+
+}
+
 export class Multiplayer {
 
 	constructor( app ) {
@@ -62,28 +103,61 @@ export class Multiplayer {
 		this._listeners = [];
 		this._announced = new Map();
 		const ui = app.ui && app.ui.ui;
+		const base = ( import.meta.env && import.meta.env.BASE_URL ) || '/';
+		const glbs = new Map();
+		const rod = app.game.rod;
 		this.remote = new RemotePlayers( {
 			net: this.client, scene: app.scene, camera: app.camera, boat: app.boat, query: app.query,
 			sceneRenderer: app.sceneRenderer, figureMaterial: app.game.stand.vendor.material,
 			labelRoot: ui ? ( ui.hud || ui.root ) : null,
+			// one parsed GLB per avatar, one SkinnedModel (its own pose) per player
+			loadAvatar: ( av ) => {
+
+				if ( ! glbs.has( av ) ) glbs.set( av, loadGLB( `${ base }models/characters/player_${ av }.glb` ) );
+				return glbs.get( av ).then( ( g ) => SkinnedModel.create( g ) );
+
+			},
+			rodKit: {
+				rodGeometry: buildRodGeometry(), rodMaterial: createRodMaterial,
+				lineGeometry: buildLineGeometry( LINE_SEGS ), lineMaterial: () => createLineMaterial( LINE_SEGS ),
+				bobberGeometry: buildBobberGeometry(), bobberMaterial: rod.bobberMat,
+			},
+			catchDisplay: () => new CatchDisplay( { scene: app.scene } ),
 		} );
+		// Enter talks, unless the start screen, the guide or the map has it
+		this.chat = ui ? new Chat( ui.hud || ui.root, this, { canOpen: () => ! ui._start && ! ( app.game.guide && app.game.guide.open ) && ! app.game.mapOpen } ) : null;
 		const c = this.client;
 		c.on( 'join', ( p ) => {
 
-			this._toast( t( '{name} sailed into the shared sea', { name: p.name } ) );
+			const msg = t( '{name} sailed into the shared sea', { name: p.name } );
+			if ( this.chat ) this.chat.system( msg );
+			else this._toast( msg );
 			this._changed();
 
 		} );
 		c.on( 'leave', ( p ) => {
 
-			if ( c.online ) this._toast( t( '{name} left the shared sea', { name: p.name } ) );
+			if ( c.online && this.chat ) this.chat.system( t( '{name} left the shared sea', { name: p.name } ) );
+			else if ( c.online ) this._toast( t( '{name} left the shared sea', { name: p.name } ) );
 			this._changed();
 
 		} );
-		c.on( 'catch', ( p, m ) => this._theirCatch( p, m ) );
+		c.on( 'catch', ( p, m ) => {
+
+			this.remote.landed( p.id, m.species, m.kg );
+			this._theirCatch( p, m );
+
+		} );
+		c.on( 'chat', ( p, text ) => {
+
+			this.remote.say( p.id, text );
+			if ( this.chat ) this.chat.add( p.name, text, p.color );
+
+		} );
 		c.on( 'status', ( s, err ) => {
 
-			if ( s === 'online' ) this._toast( t( 'Online · {n} other players on this sea', { n: c.peers.size } ) );
+			if ( s === 'online' && this.chat ) this.chat.system( t( 'Online · {n} other players on this sea', { n: c.peers.size } ) );
+			else if ( s === 'online' ) this._toast( t( 'Online · {n} other players on this sea', { n: c.peers.size } ) );
 			else if ( s === 'error' ) this._toast( t( errorText( err ) ), 5000 );
 			this._changed();
 
@@ -91,6 +165,7 @@ export class Multiplayer {
 		app.game.onCatch = ( f ) => c.sendCatch( f );
 		const qs = app.qs;
 		if ( qs && qs.has( 'server' ) ) this.connect( { server: qs.get( 'server' ) } );
+		else if ( app.playing ) this.connect(); // the start screen has already been passed
 
 	}
 
@@ -106,6 +181,7 @@ export class Multiplayer {
 		return {
 			name: cleanName( s.name ) || `${ t( 'Sailor' ) } ${ 100 + Math.floor( Math.random() * 900 ) }`,
 			color: COLORS.includes( s.color ) ? s.color : COLORS[ Math.floor( Math.random() * COLORS.length ) ],
+			av: cleanAvatar( s.av ) || AVATARS[ 0 ],
 			server: typeof s.server === 'string' && s.server ? s.server : BUILT_SERVER || defaultServer(),
 		};
 
@@ -160,20 +236,31 @@ export class Multiplayer {
 
 	}
 
-	connect( { name, color, server } = {} ) {
+	connect( { name, color, server, av } = {} ) {
 
 		if ( name !== undefined ) this.settings.name = cleanName( name ) || this.settings.name;
+		if ( av !== undefined && cleanAvatar( av ) ) this.settings.av = av;
 		if ( color !== undefined && COLORS.includes( color ) ) this.settings.color = color;
 		if ( server !== undefined && String( server ).trim() ) this.settings.server = normalizeServer( server );
 
 		this._save();
-		this.client.connect( this.settings.server, { name: this.settings.name, color: this.settings.color } );
+		this.client.connect( this.settings.server, { name: this.settings.name, color: this.settings.color, av: this.settings.av } );
 
 	}
 
 	disconnect() {
 
 		this.client.disconnect();
+
+	}
+
+	// a chat line from us: to the others, and into our own log
+	say( text ) {
+
+		const s = this.client.sendChat( text );
+		if ( ! s ) return false;
+		if ( this.chat ) this.chat.add( this.settings.name, s, this.settings.color, true );
+		return true;
 
 	}
 
@@ -211,6 +298,11 @@ export class Multiplayer {
 		};
 		if ( p.mode === 'deck' ) s.l = [ p.deckPos.x, p.deckPos.y, p.deckPos.z ];
 		else if ( p.mode === 'boat' ) s.l = [ HOUSE.helmX, app.boat.lines.deckY, HOUSE.seatZ ];
+		// the rod, and where the line ends
+		const rod = app.game.rod;
+		const r = rod.equipped ? ROD_CODE[ rod.state ] ?? 1 : 0;
+		if ( r ) s.r = r;
+		if ( r >= 3 ) s.k = [ rod.bobber.x, rod.bobber.y, rod.bobber.z ];
 		if ( ! [ 'walk', 'swim', 'boat', 'deck' ].includes( s.m ) ) s.m = 'walk';
 		return s;
 

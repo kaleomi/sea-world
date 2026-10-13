@@ -1,4 +1,4 @@
-import { PROTOCOL, TICK_HZ, MAX_PLAYERS, MAX_FRAME, cleanName, cleanColor, cleanState, cleanCatch } from '../src/net/Protocol.js';
+import { PROTOCOL, TICK_HZ, MAX_PLAYERS, MAX_FRAME, AVATARS, cleanName, cleanColor, cleanAvatar, cleanState, cleanCatch, cleanChat } from '../src/net/Protocol.js';
 import { FISH } from '../src/game/FishTable.js';
 
 // One shared sea: who is in it and where they are. Transport-free (server/index.js wires it to
@@ -9,6 +9,8 @@ import { FISH } from '../src/game/FishTable.js';
 // The server only relays and checks: each game simulates its own world, fish and money.
 const MSGS_PER_SEC = 40; // a client sending more than this (sustained) is cut off
 const HELLO_TIMEOUT = 10; // s to say hello after connecting
+const CHAT_GAP = 0.7; // s between chat lines (a short burst is allowed)
+const CHAT_BURST = 3;
 const isFish = ( id ) => Object.prototype.hasOwnProperty.call( FISH, id );
 
 export class Sea {
@@ -18,7 +20,7 @@ export class Sea {
 		this.maxPlayers = maxPlayers;
 		this.now = now;
 		this.log = log;
-		this.players = new Map(); // id -> { conn, name, color, state, dirty, joined, budget, at }
+		this.players = new Map(); // id -> { conn, name, color, av, state, dirty, budget, at, chat, chatAt }
 		this.pending = new Map(); // id -> { conn, at } (connected, no hello yet)
 		this._next = 1;
 
@@ -89,11 +91,12 @@ export class Sea {
 			if ( this.players.size >= this.maxPlayers ) return this._kick( id, conn, 'full' );
 			const name = cleanName( msg.name ) || `Fisher ${ id }`;
 			const color = cleanColor( msg.color );
+			const av = cleanAvatar( msg.av ) || AVATARS[ id % AVATARS.length ];
 			this.pending.delete( id );
-			const peers = [ ...this.players ].map( ( [ pid, q ] ) => ( { id: pid, name: q.name, color: q.color } ) );
-			this.players.set( id, { conn, name, color, state: null, dirty: false, budget: MSGS_PER_SEC, at: this.now() } );
+			const peers = [ ...this.players ].map( ( [ pid, q ] ) => ( { id: pid, name: q.name, color: q.color, av: q.av } ) );
+			this.players.set( id, { conn, name, color, av, state: null, dirty: false, budget: MSGS_PER_SEC, at: this.now(), chat: CHAT_BURST, chatAt: this.now() } );
 			conn.send( JSON.stringify( { t: 'welcome', id, peers, tick: TICK_HZ } ) );
-			this._broadcast( { t: 'join', id, name, color }, id );
+			this._broadcast( { t: 'join', id, name, color, av }, id );
 			this.log( `join ${ id } ${ name } (${ this.count } at sea)` );
 			return;
 
@@ -120,6 +123,16 @@ export class Sea {
 
 			const c = cleanCatch( msg, isFish );
 			if ( c ) this._broadcast( { t: 'catch', id, ...c }, id );
+
+		} else if ( msg.t === 'chat' ) {
+
+			// its own slower budget: a few lines in a row, then one every CHAT_GAP s
+			p.chat = Math.min( CHAT_BURST, p.chat + ( t - p.chatAt ) / CHAT_GAP );
+			p.chatAt = t;
+			const text = cleanChat( msg.text );
+			if ( ! text || p.chat < 1 ) return;
+			p.chat -= 1;
+			this._broadcast( { t: 'chat', id, text }, id );
 
 		}
 

@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Rebuild the vendor characters from Microsoft Rocketbox (MIT, https://github.com/microsoft/Microsoft-Rocketbox).
+# Rebuild the vendor characters and the players' avatars from Microsoft Rocketbox (MIT, https://github.com/microsoft/Microsoft-Rocketbox).
 # Needs: Blender 4.2+ (tested 5.2), ImageMagick, curl, gh (GitHub CLI) for listing texture files.
 #   tools/characters/build.sh [workdir]
 set -e
@@ -9,13 +9,18 @@ mkdir -p $WORK && cd $WORK
 # avatar : texture prefix : clip set (m / f) : output name
 AVATARS=( "Professions/Wood_Male_01:m110:m:joe" "Adults/Female_Adult_04:f004:f:marta" )
 CLIPS=( idle_neutral_01 idle_breathe_01 idle_look_around_01 gestic_talk_neutral_01 gestic_talk_relaxed_01 wave_01 gestic_shrug_01 )
+# the players on the shared sea (net/RemotePlayers.js): standing, holding a rod (the umbrella pose), cheering, waving, walking
+PLAYERS=( "Adults/Male_Adult_01:m002:m:player_m1" "Adults/Male_Adult_16:m019:m:player_m2" "Adults/Female_Adult_17:f006:f:player_f1" "Adults/Female_Adult_05:f005:f:player_f2" )
+PCLIPS=( idle_neutral_01 umbrella_idle_01 cheer_01 wave_01 )
+S=Assets/Animations/all_animations_max_motextr_static; XY=Assets/Animations/all_animations_max_motextr_xy
 : > files
-for a in $AVATARS; do
+for a in $AVATARS $PLAYERS; do
 	d=${a%%:*}; n=$(basename $d)
 	echo "Assets/Avatars/$d/Export/$n.fbx" >> files
 	gh api "repos/microsoft/Microsoft-Rocketbox/contents/Assets/Avatars/$d/Textures" --jq '.[].name' | sed "s#^#Assets/Avatars/$d/Textures/#" >> files
 done
-for c in $CLIPS; do for g in m f; do echo "Assets/Animations/all_animations_max_motextr_static/${g}_$c.max.fbx"; done; done >> files
+for c in $CLIPS $PCLIPS; do for g in m f; do echo "$S/${g}_$c.max.fbx"; done; done >> files
+for g in m f; do echo "$XY/${g}_walk_neutral_01.max.fbx"; done >> files
 echo LICENSE.md >> files
 tr '\n' '\0' < files | xargs -0 -P 16 -n 1 $HERE/fetch.sh
 mkdir -p $ROOT/public/models/characters
@@ -23,5 +28,13 @@ cp LICENSE.md $ROOT/public/models/characters/LICENSE-Rocketbox.md
 for a in $AVATARS; do
 	d=${a%%:*}; r=${a#*:}; p=${r%%:*}; r=${r#*:}; g=${r%%:*}; out=${r#*:}; n=$(basename $d)
 	$HERE/textures.sh Assets/Avatars/$d/Textures tex/$p $p 1024
-	$BLENDER -b --python $HERE/convert.py -- Assets/Avatars/$d/Export/$n.fbx tex/$p $p $ROOT/public/models/characters/$out.glb Assets/Animations/all_animations_max_motextr_static/${g}_*.fbx
+	clips=(); for c in $CLIPS; do clips+=$S/${g}_$c.max.fbx; done
+	$BLENDER -b --python $HERE/convert.py -- Assets/Avatars/$d/Export/$n.fbx tex/$p $p $ROOT/public/models/characters/$out.glb $clips
+done
+for a in $PLAYERS; do
+	d=${a%%:*}; r=${a#*:}; p=${r%%:*}; r=${r#*:}; g=${r%%:*}; out=${r#*:}; n=$(basename $d)
+	$HERE/textures.sh Assets/Avatars/$d/Textures tex/$p $p 1024
+	clips=(); for c in $PCLIPS; do clips+=$S/${g}_$c.max.fbx; done; clips+=$XY/${g}_walk_neutral_01.max.fbx
+	$BLENDER -b --python $HERE/convert.py -- Assets/Avatars/$d/Export/$n.fbx tex/$p $p $ROOT/public/models/characters/$out.glb $clips
+	python3 $HERE/inplace.py $ROOT/public/models/characters/$out.glb walk_neutral_01
 done
