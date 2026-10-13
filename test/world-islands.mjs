@@ -1,7 +1,8 @@
 // Outer islands render test: the home TerrainData plus the generated islands of the archipelago
 // (world/islands/, world/terrain/OuterIsland.js) through TerrainGPU and a Terrain mesh each,
 // rendered headless from a few cameras round them.
-//   node test/world-islands.mjs [outDir] [--view=name] [--veg]   (--veg: with their vegetation)
+//   node test/world-islands.mjs [outDir] [--view=name] [--veg] [--village]
+//   (--veg: with their vegetation; --village: with the village and the quest givers' homes, plus a view of each)
 import { worldHarness, done } from './world-harness.mjs';
 import { TerrainData } from '../src/world/TerrainData.js';
 import { TerrainGPU } from '../src/world/TerrainGPU.js';
@@ -23,11 +24,21 @@ gpu.setOuterShoreFields( data.outer.map( ( o ) => computeShoreField( o.localView
 const terrains = [ new Terrain( { scene: H.scene, terrainData: data, terrainGPU: gpu } ), ...data.outer.map( ( o ) => new Terrain( { scene: H.scene, terrainData: o, terrainGPU: gpu } ) ) ];
 for ( const tr of terrains ) tr.material.appliesHillShadow = true;
 H.before.push( ( cam ) => { for ( const tr of terrains ) tr.update( cam ); } );
+let village = null;
+if ( process.argv.includes( '--village' ) ) {
+
+	const { Village } = await import( '../src/world/Village.js' );
+	const { Colliders } = await import( '../src/world/Colliders.js' );
+	village = new Village( { scene: H.scene, terrain: data, colliders: new Colliders() } );
+	console.log( 'outposts', village.outposts.map( ( p ) => p.id ).join( ' ' ) );
+
+}
+
 if ( process.argv.includes( '--veg' ) ) {
 
 	const { Vegetation } = await import( '../src/world/Vegetation.js' );
 	t = performance.now();
-	const veg = new Vegetation( { scene: H.scene, terrain: data } );
+	const veg = new Vegetation( { scene: H.scene, terrain: data, village } );
 	console.log( 'vegetation', ( performance.now() - t ).toFixed( 0 ), 'ms', veg.records.palms.length, 'palms', veg.records.trees.length, 'trees' );
 	H.before.push( ( cam ) => veg.update( 1 / 60, cam ) );
 
@@ -53,10 +64,21 @@ const views = {
 	emberBeach: { pos: [ E.x + 40, 4, E.z + 395 ], target: [ E.x - 40, 8, E.z + 330 ] },
 	coralIslet: { pos: [ C.x + 40, 5, C.z + 420 ], target: [ C.x - 20, 2, C.z + 300 ] },
 };
+// each home seen from the water in front of it, the lighthouse from further out
+for ( const p of village ? village.outposts : [] ) {
+
+	const far = p.kind === 'lighthouse' ? 150 : 24, up = p.kind === 'lighthouse' ? 40 : 7;
+	const y = p.kind === 'lighthouse' ? p.floorY + 8 : p.floorY;
+	const dx = Math.sin( p.yaw ), dz = Math.cos( p.yaw );
+	views[ `home_${ p.id }` ] = { pos: [ p.x + dx * far + dz * far * 0.35, y + up, p.z + dz * far - dx * far * 0.35 ], target: [ p.x, y + 1.5, p.z ] };
+	if ( p.kind === 'lighthouse' ) views.home_lighthouseNear = { pos: [ p.x + dx * 30 + dz * 12, p.floorY + 9, p.z + dz * 30 - dx * 12 ], target: [ p.x, p.floorY + 11, p.z ] };
+
+}
+
 const only = process.argv.find( ( a ) => a.startsWith( '--view=' ) );
 for ( const [ k, v ] of Object.entries( views ) ) {
 
-	if ( only && only.slice( 7 ) !== k ) continue;
+	if ( only && ! k.startsWith( only.slice( 7 ) ) ) continue; // a prefix picks several
 	await H.shot( `${ out }/claude-islands-${ k }.png`, v );
 
 }

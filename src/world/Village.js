@@ -5,6 +5,7 @@ import { createVillageMaterials } from './village/VillageMaterials.js';
 import { VillageTextures } from './village/TextureBaker.js';
 import { buildHouse, buildBoathouse, buildMarketStall, buildShed } from './village/Buildings.js';
 import { buildBoardwalk } from './village/Boardwalk.js';
+import { buildOutposts } from './village/Outposts.js';
 import { buildPier, PIER } from './Pier.js';
 import { G } from '../engine/render/Frame.js';
 import {
@@ -128,6 +129,8 @@ export class Village {
 
 		this._beachProps( ctx( this.harbor ) );
 		this._villageProps( ctx( this.town ) );
+		// the quest givers' homes and the lighthouse on the outer islands (village/Outposts.js)
+		this.outposts = buildOutposts( ctx( this.town ), terrain.outer, this.footprints );
 
 		this._assemble();
 		this._buildSign();

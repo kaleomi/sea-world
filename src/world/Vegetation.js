@@ -106,11 +106,15 @@ export class Vegetation {
 		const site = new VegSite( terrain, villageObstacles( village ) );
 		this.site = site;
 		const recs = scatterVegetation( site );
-		// the outer islands (TerrainData.outer) add theirs to the same lists: same meshes, same LOD
+		// the outer islands (TerrainData.outer) add theirs to the same lists: same meshes, same LOD,
+		// kept off the village's buildings out there (the quest givers' homes, village/Outposts.js)
+		const outerFoot = ( village && typeof village.getFootprints === 'function' ? village.getFootprints() : [] )
+			.filter( ( f ) => Math.hypot( f.x, f.z ) > 1100 );
+		const clear = ( p ) => ! outerFoot.some( ( f ) => ( p.x - f.x ) ** 2 + ( p.z - f.z ) ** 2 < ( f.r + 1.5 ) ** 2 );
 		for ( const o of terrain.outer || [] ) {
 
 			const r = scatterIsland( o );
-			for ( const k in r ) recs[ k ].push( ...r[ k ] );
+			for ( const k in r ) recs[ k ].push( ...( outerFoot.length ? r[ k ].filter( clear ) : r[ k ] ) );
 
 		}
 
