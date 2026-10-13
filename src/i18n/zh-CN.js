@@ -803,6 +803,11 @@ export const ZH_CN = {
 	'Leave helm   ·   C  cruise off   ·   S  brake': '离开舵位   ·   C  取消巡航   ·   S  刹车',
 	'Cruise control on · C or S to stop': '定速巡航已开启 · 按 C 或 S 停止',
 	'Cruise control off': '定速巡航已关闭',
+	'Run aground · press B to get back into deep water': '船搁浅了 · 按 B 拖回深水',
+	'The boat is afloat · B only helps when it is stuck': '船没有搁浅 · B 只在搁浅时有用',
+	'No deep water nearby': '附近没有足够深的水',
+	'Back in deep water ({m} m away)': '已拖回深水（{m} 米外）',
+	'Get a stranded boat back into deep water': '把搁浅的船拖回深水',
 
 	// 画质预设和显卡出错（core/Quality.js, main.js）
 	'Graphics': '画质',

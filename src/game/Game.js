@@ -20,6 +20,8 @@ import { Guide } from './Guide.js';
 import { WorldMap } from './WorldMap.js';
 import { Vendor } from './Vendor.js';
 import { GIVERS, beachSpot, currentQuest, questReady } from './Quests.js';
+import { deepWaterNear, aground } from './Rescue.js';
+import { G } from '../core/Globals.js';
 import { t } from '../i18n/index.js';
 
 // how long the catch card stays up unless dismissed (ms)
@@ -470,12 +472,58 @@ export class Game {
 
 	}
 
+	// a boat run aground: after a few seconds of throttle without moving, say how to get off; B (aboard)
+	// pulls it to the nearest deep water (Rescue.js)
+	updateStranded( dt, aboard ) {
+
+		const app = this.app, b = app.boatCtl, T = app.terrainData;
+		if ( ! aboard || ! T ) {
+
+			this._stuckT = 0;
+			return;
+
+		}
+
+		const depth = G.seaLevel.value - T.heightAt( b.position.x, b.position.z );
+		this._stuckT = b.driven && aground( depth, b.throttle, b.velocity.length() ) ? ( this._stuckT || 0 ) + dt : 0;
+		if ( this._stuckT > 2.5 && ! this._stuckSaid ) {
+
+			this._stuckSaid = true;
+			this.toast( t( 'Run aground · press B to get back into deep water' ), 5000 );
+
+		}
+
+		if ( this._stuckT === 0 ) this._stuckSaid = false;
+		if ( ! app.input.hit( 'KeyB' ) ) return;
+		if ( depth >= 3 && ! this._stuckSaid ) {
+
+			this.toast( t( 'The boat is afloat · B only helps when it is stuck' ), 2500 );
+			return;
+
+		}
+
+		const spot = deepWaterNear( ( x, z ) => T.heightAt( x, z ), b.position.x, b.position.z, G.seaLevel.value );
+		if ( ! spot ) {
+
+			this.toast( t( 'No deep water nearby' ), 2500 );
+			return;
+
+		}
+
+		b.relaunch( spot.x, spot.z, spot.heading );
+		this._stuckT = 0;
+		this._stuckSaid = false;
+		this.toast( t( 'Back in deep water ({m} m away)', { m: Math.round( spot.dist ) } ), 2500 );
+
+	}
+
 	// fuel burn at the helm (the engine stops when the tank is dry) and the fish finder
 	updateBoat( dt ) {
 
 		const app = this.app, b = app.boatCtl, p = app.player, s = this.state;
 		const aboard = p.mode === 'boat' || p.mode === 'deck';
 		if ( aboard ) this.updateWaters( dt, b.position );
+		this.updateStranded( dt, aboard );
 		if ( this._aboard && ! aboard && b.anchored ) this.toast( t( 'Anchor down · the boat waits here' ), 3000 );
 		this._aboard = aboard;
 		if ( b.driven ) {

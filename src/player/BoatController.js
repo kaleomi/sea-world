@@ -490,6 +490,21 @@ export class BoatController {
 
 	}
 
+	// afloat again at (x, z) facing `heading`, at rest, engine still running (a stranded boat pulled off,
+	// game/Rescue.js)
+	relaunch( x, z, heading ) {
+
+		this.position.set( x, G.seaLevel.value, z );
+		this.quaternion.setFromAxisAngle( new THREE.Vector3( 0, 1, 0 ), heading );
+		this.velocity.set( 0, 0, 0 );
+		this.angular.set( 0, 0, 0 );
+		this.throttle = 0;
+		this.steer = 0;
+		this.moored = false;
+		this.anchored = false;
+
+	}
+
 	// back to the berth, at rest (safety net if the integration ever blows up)
 	reset() {
 

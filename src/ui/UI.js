@@ -2156,6 +2156,7 @@ export class UI {
 						<h3>${ t( 'Interact' ) }</h3>
 						${ row( k( 'E' ), t( 'Interact<small>Board, helm, step ashore, trade</small>' ) ) }
 						${ row( k( 'V' ), t( 'Boat camera<small>1st / 3rd person</small>' ) ) }
+						${ row( k( 'B' ), t( 'Get a stranded boat back into deep water' ) ) }
 						${ row( k( 'R' ), t( 'Fishing rod<small>Take out / put away</small>' ) ) }
 						${ row( k( 'LMB' ), t( 'Cast, strike, reel<small>Hold to wind up / reel</small>' ) ) }
 						${ row( k( 'RMB' ), t( 'Reel in an empty line' ) ) }

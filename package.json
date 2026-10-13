@@ -6,7 +6,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "server": "npm --prefix server install --no-audit --no-fund && npm --prefix server start",
-    "test": "node test/i18n.mjs && node test/game-logic.mjs && node test/engine-smoke.mjs && node test/weather-logic.mjs && node test/weather-rain.mjs && node test/eco-rhythm.mjs && node test/tide-logic.mjs && node test/boat-capsize.mjs && node test/terrain-cache.mjs && node test/orders.mjs && node test/collection.mjs && node test/legends.mjs && node test/tournament.mjs && node test/islands.mjs && node test/quests.mjs && node test/outposts.mjs && node test/quality.mjs && node test/cruise.mjs && node test/net.mjs",
+    "test": "node test/i18n.mjs && node test/game-logic.mjs && node test/engine-smoke.mjs && node test/weather-logic.mjs && node test/weather-rain.mjs && node test/eco-rhythm.mjs && node test/tide-logic.mjs && node test/boat-capsize.mjs && node test/terrain-cache.mjs && node test/orders.mjs && node test/collection.mjs && node test/legends.mjs && node test/tournament.mjs && node test/islands.mjs && node test/quests.mjs && node test/outposts.mjs && node test/quality.mjs && node test/cruise.mjs && node test/rescue.mjs && node test/net.mjs",
     "test:eco": "node test/eco-rhythm.mjs && node test/life-eco.mjs && node test/life-eco-fish.mjs && node test/life-eco-whale.mjs",
     "test:bio": "node test/ocean-snow-bio.mjs && node test/ocean-spray-bio.mjs && node test/ocean-breaker-bio.mjs",
     "test:tide": "node test/tide-logic.mjs",
