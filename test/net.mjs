@@ -5,7 +5,7 @@ import { cleanName, cleanState, cleanCatch, cleanColor, PROTOCOL, MAX_FRAME } fr
 import { Sea } from '../server/Sea.js';
 import { NetClient, INTERP, lerpAngle, errorText } from '../src/net/NetClient.js';
 import { RemotePlayers } from '../src/net/RemotePlayers.js';
-import { defaultServer } from '../src/net/Multiplayer.js';
+import { defaultServer, normalizeServer } from '../src/net/Multiplayer.js';
 import { Scene, PerspectiveCamera } from '../src/engine/index.js';
 import { BoatModel } from '../src/world/BoatModel.js';
 
@@ -250,6 +250,9 @@ if ( startServer && typeof WebSocket !== 'undefined' ) {
 }
 
 ok( defaultServer( { hostname: 'localhost', protocol: 'http:' } ) === 'ws://localhost:5191' && defaultServer( { hostname: 'sea.example', protocol: 'https:' } ) === 'wss://sea.example:5191', 'settings: the default server follows the page (wss on https)' );
+const http = { protocol: 'http:' }, https = { protocol: 'https:' };
+ok( normalizeServer( '192.168.1.5', http ) === 'ws://192.168.1.5:5191' && normalizeServer( 'ws://localhost:6000/', http ) === 'ws://localhost:6000' && normalizeServer( 'ws://[::1]', http ) === 'ws://[::1]:5191', 'settings: a plain address gets ws:// and our port' );
+ok( normalizeServer( 'wss://tidewater-sea.onrender.com/', https ) === 'wss://tidewater-sea.onrender.com' && normalizeServer( 'tidewater-sea.onrender.com', https ) === 'wss://tidewater-sea.onrender.com', 'settings: a hosted wss:// server keeps its own port (443); no scheme on an https page means wss' );
 ok( errorText( 'full' ) !== errorText( 'version' ) && errorText( 'nonsense' ) === errorText( 'unreachable' ), 'errors: each has its own message' );
 
 console.log( fails ? `\n${ fails } failed` : '\nall passed' );

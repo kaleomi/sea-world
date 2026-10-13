@@ -25,6 +25,19 @@ export function defaultServer( loc = globalThis.location ) {
 
 }
 
+// what the player typed -> a socket address. No scheme: wss on an https page (which may only open secure
+// sockets), ws otherwise. A plain ws:// address without a port gets ours; a wss:// one is a hosted server
+// behind https and stays on its own port (443).
+export function normalizeServer( input, loc = globalThis.location ) {
+
+	let url = String( input ).trim().replace( /\/+$/, '' );
+	if ( ! /^wss?:\/\//i.test( url ) ) url = `${ loc && loc.protocol === 'https:' ? 'wss' : 'ws' }://${ url }`;
+	const m = url.match( /^(wss?):\/\/([^/]+)(.*)$/i );
+	if ( m && m[ 1 ].toLowerCase() === 'ws' && ! /(^[^:]*|\]):\d+$/.test( m[ 2 ] ) ) url = `${ m[ 1 ] }://${ m[ 2 ] }:${ DEFAULT_PORT }${ m[ 3 ] }`;
+	return url;
+
+}
+
 const storage = () => {
 
 	try {
@@ -151,14 +164,7 @@ export class Multiplayer {
 
 		if ( name !== undefined ) this.settings.name = cleanName( name ) || this.settings.name;
 		if ( color !== undefined && COLORS.includes( color ) ) this.settings.color = color;
-		if ( server !== undefined && String( server ).trim() ) {
-
-			let url = String( server ).trim();
-			if ( ! /^wss?:\/\//i.test( url ) ) url = `ws://${ url }`;
-			if ( ! /:\d+(\/|$)/.test( url.replace( /^wss?:\/\//i, '' ) ) ) url = url.replace( /\/?$/, `:${ DEFAULT_PORT }` );
-			this.settings.server = url;
-
-		}
+		if ( server !== undefined && String( server ).trim() ) this.settings.server = normalizeServer( server );
 
 		this._save();
 		this.client.connect( this.settings.server, { name: this.settings.name, color: this.settings.color } );
