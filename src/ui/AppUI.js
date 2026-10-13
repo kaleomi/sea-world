@@ -312,7 +312,20 @@ export class AppUI {
 		live.addInfo( { label: 'CPU per frame', get: () => `${ ( app.cpuMs || 0 ).toFixed( 2 ) } ms` } );
 		live.addInfo( { label: 'Render size', get: () => `${ app.sceneRenderer.width } × ${ app.sceneRenderer.height }` } );
 		const quality = perf.addFolder( 'Quality', { icon: 'layers' } );
-		quality.addSlider( { label: 'Render scale', object: s, key: 'renderScale', min: 0.5, max: 1, step: 0.05, format: ( v ) => `${ Math.round( v * 100 ) }%`, tooltip: 'Internal resolution; the temporal upscaler reconstructs the full output resolution.', onChange: ( v ) => app.setRenderScale( v ) } );
+		// the presets (core/Quality.js): auto starts from the graphics card and steps down when it's slow
+		const Q = app.quality;
+		s.graphics = Q ? ( Q.mode === 'fixed' ? 'auto' : Q.mode ) : 'auto';
+		const qCtl = [];
+		if ( Q ) quality.addSelect( { label: 'Graphics', object: s, key: 'graphics', tooltip: 'Auto picks a level for your graphics card and lowers it if the game runs slowly.', options: [ { label: 'Auto', value: 'auto' }, { label: 'High', value: 'high' }, { label: 'Medium', value: 'medium' }, { label: 'Low', value: 'low' } ], onChange: ( v ) => {
+
+			Q.set( v );
+			s.renderScale = app.settings.renderScale;
+			s.shadows = app.shadows.enabled;
+			s.ssr = app.waterMaterial.params.ssr.value > 0.5;
+			for ( const c of qCtl ) if ( c && c.update ) c.update();
+
+		} } );
+		qCtl.push( quality.addSlider( { label: 'Render scale', object: s, key: 'renderScale', min: 0.5, max: 1, step: 0.05, format: ( v ) => `${ Math.round( v * 100 ) }%`, tooltip: 'Internal resolution; the temporal upscaler reconstructs the full output resolution.', onChange: ( v ) => app.setRenderScale( v ) } ) );
 		// anti-aliasing: the TAA with 2..16 jitter positions averaged per pixel, or none
 		s.aa = app.post.aaMode === 'none' ? 0 : app.post.taau.jitterPhaseOverride;
 		quality.addSelect( { label: 'Anti-aliasing', object: s, key: 'aa', tooltip: 'Temporal anti-aliasing: each pixel averages this many sub-pixel sample positions over successive frames (it also smooths dithered fades and shadow noise). More samples cost nothing per frame but take a few more frames to settle.', options: [ { label: 'Off', value: 0 }, { label: '2x', value: 2 }, { label: '4x', value: 4 }, { label: '8x', value: 8 }, { label: '16x', value: 16 } ], onChange: ( v ) => {
@@ -322,9 +335,10 @@ export class AppUI {
 			if ( n > 0 ) app.post.taau.jitterPhaseOverride = n;
 
 		} } );
-		quality.addToggle( { label: 'Shadows', object: s, key: 'shadows', onChange: ( v ) => { app.shadows.enabled = v; } } );
-		s.ssr = true;
-		quality.addToggle( { label: 'Water reflections', object: s, key: 'ssr', tooltip: 'Screen-space reflections of the pier, boats and hills on the water.', onChange: ( v ) => { app.waterMaterial.params.ssr.value = v ? 1 : 0; } } );
+		s.shadows = app.shadows.enabled;
+		qCtl.push( quality.addToggle( { label: 'Shadows', object: s, key: 'shadows', onChange: ( v ) => { app.shadows.enabled = v; } } ) );
+		s.ssr = app.waterMaterial.params.ssr.value > 0.5;
+		qCtl.push( quality.addToggle( { label: 'Water reflections', object: s, key: 'ssr', tooltip: 'Screen-space reflections of the pier, boats and hills on the water.', onChange: ( v ) => { app.waterMaterial.params.ssr.value = v ? 1 : 0; } } ) );
 
 		// ---- what a player sees: the camera, the effects and the performance settings. The sea, shore
 		// and sky controls, the free camera and the side rail are developer tools (core/DevMode.js).

@@ -619,7 +619,7 @@ export const ZH_CN = {
 	'{s} · {done} / {total}': '{s} · {done} / {total}',
 	'Something went wrong: ': '出错了：',
 	'This browser does not support WebGPU. Open the game in a recent Chrome, Edge or Safari.': '当前浏览器不支持 WebGPU。请用新版 Chrome、Edge 或 Safari 打开游戏。',
-	'No graphics card is available to WebGPU. Turn on hardware acceleration in the browser settings, or update the graphics driver.': 'WebGPU 找不到可用的显卡。请在浏览器设置里打开硬件加速，或更新显卡驱动。',
+	'No graphics card is available to WebGPU. Turn on hardware acceleration in the browser settings, or update the graphics driver.': 'WebGPU 找不到可用的显卡。请用最新版 Chrome 或 Edge，在浏览器设置里打开“使用图形加速”，或更新显卡驱动。',
 
 	// ── 界面演示模式 ──────────────────────────────────────────────────────
 	'Recommended settings applied': '已应用推荐设置',
@@ -798,4 +798,13 @@ export const ZH_CN = {
 	'Step ashore': '上岸',
 	'Jump overboard': '跳下船',
 	'Leave helm   ·   V  camera': '离开舵位   ·   V  切换视角',
+
+	// 画质预设和显卡出错（core/Quality.js, main.js）
+	'Graphics': '画质',
+	'Auto': '自动',
+	'Auto picks a level for your graphics card and lowers it if the game runs slowly.': '自动：按你的显卡选一档画质，游戏卡的时候自动调低。',
+	'Running slowly: graphics lowered to {q}': '画面有点卡，已自动把画质降到“{q}”',
+	'The graphics card stopped responding': '显卡没有响应了',
+	'It probably ran out of memory or took too long on a frame. The game will reload with {q} graphics.': '可能是显存不够，或者某一帧画得太久。重新加载后会改用“{q}”画质。',
+	'Reload': '重新加载',
 };

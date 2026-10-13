@@ -24,11 +24,13 @@ export const GPU = {
 	frame: 0,
 	samplers: null,
 	_submitHooks: [],
+	onDeviceLost: null, // ( info ) => {}
 
 	async init( { canvas = null, requiredLimits = {}, headless = false } = {} ) {
 
 		if ( ! navigator.gpu ) throw new Error( 'WebGPU is not available in this browser.' );
-		const adapter = await navigator.gpu.requestAdapter( { powerPreference: 'high-performance' } );
+		// some machines (laptops with two GPUs, some drivers) give nothing for 'high-performance': ask plainly
+		const adapter = await navigator.gpu.requestAdapter( { powerPreference: 'high-performance' } ) || await navigator.gpu.requestAdapter();
 		if ( ! adapter ) throw new Error( 'No WebGPU adapter found.' );
 		this.adapter = adapter;
 
@@ -61,7 +63,13 @@ export const GPU = {
 		this.device = device;
 		this.queue = device.queue;
 		this.limits = device.limits;
-		device.lost.then( ( info ) => console.error( 'WebGPU device lost:', info.message ) );
+		// a lost device (out of GPU memory, a driver timeout) leaves the canvas black: tell the page (main.js)
+		device.lost.then( ( info ) => {
+
+			console.error( 'WebGPU device lost:', info.reason, info.message );
+			if ( info.reason !== 'destroyed' && this.onDeviceLost ) this.onDeviceLost( info );
+
+		} );
 		device.addEventListener && device.addEventListener( 'uncapturederror', ( e ) => console.error( 'WebGPU:', e.error.message.split( '\n' ).slice( 0, 6 ).join( '\n' ) ) );
 
 		if ( canvas && ! headless ) {

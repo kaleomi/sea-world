@@ -1,5 +1,6 @@
 import { Vector3, Euler, Color, MathUtils, Mesh } from './engine/index.js';
 import { GPU } from './engine/gpu/GPU.js';
+import { Quality } from './core/Quality.js';
 import { SunShadows } from './engine/render/Shadows.js';
 import { FrameUniforms } from './engine/render/Frame.js';
 
@@ -387,6 +388,11 @@ fn terrainWetness( xz: vec2f, h: f32 ) -> vec2f {
 		G.exposure.value = this.settings.exposure;
 		if ( qs.has( 'scale' ) ) this.settings.renderScale = Number( qs.get( 'scale' ) ) || 1;
 		this.setRenderScale( this.settings.renderScale );
+		// graphics quality (core/Quality.js): the player's preset, or auto from the graphics card, stepping
+		// down while it runs too slowly. ?scale and ?bench (reference renders) keep the full settings.
+		this.quality = new Quality( this, ( GPU.adapter && GPU.adapter.info ) || {} );
+		if ( ! qs.has( 'scale' ) && ! qs.has( 'bench' ) ) this.quality.apply();
+		else this.quality.mode = 'fixed';
 		// tide overrides (mainly for the test harness: ?tideAmp=1.2&tidePeriod=300&tidePhase=0.25)
 		if ( qs.has( 'tideAmp' ) ) this.settings.tideAmplitude = Number( qs.get( 'tideAmp' ) );
 		if ( qs.has( 'tidePeriod' ) ) this.settings.tidePeriod = Number( qs.get( 'tidePeriod' ) );
@@ -661,6 +667,7 @@ fn terrainWetness( xz: vec2f, h: f32 ) -> vec2f {
 		FrameUniforms.fields.frameIndex.value = GPU.frame;
 		const s = this.settings;
 		this.updateFPS( dt );
+		if ( this.playing && this.quality ) this.quality.update( dt );
 		G.dt.value = dt;
 		G.time.value += dt;
 		if ( s.timeSpeed !== 0 ) s.timeOfDay = ( s.timeOfDay + dt * s.timeSpeed + 24 ) % 24;

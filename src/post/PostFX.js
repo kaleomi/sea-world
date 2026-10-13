@@ -643,15 +643,37 @@ fn fragment( in: FSIn ) -> vec4f {
 
 	}
 
+	// ambient occlusion on / off (the low graphics preset, core/Quality.js): off skips GTAO and its blurs
+	// and zeroes its strength in the composite, so the stale AO texture is never seen
+	get aoEnabled() {
+
+		return this._aoOn !== false;
+
+	}
+
+	set aoEnabled( on ) {
+
+		on = !! on;
+		if ( on === this.aoEnabled ) return;
+		if ( ! on ) this._aoKeep = this.params.aoStrength.value;
+		this.params.aoStrength.value = on ? ( this._aoKeep ?? 1 ) : 0;
+		this._aoOn = on;
+
+	}
+
 	render() {
 
 		if ( ! this._built ) this.beginFrame();
 		const T = this._timers || null;
 		this.motionBlur.compute( this._outW, this._outH );
 		this._aoDepthPass.render( { colorViews: [ this.aoDepth.texture ], clear: CLR } );
-		this.aoPass.render();
-		this._aoBlurXPass.render( { colorViews: [ this.aoBlurX.texture ], clear: CLR } );
-		this._aoBlurYPass.render( { colorViews: [ this.aoBlurY.texture ], clear: CLR } );
+		if ( this.aoEnabled ) {
+
+			this.aoPass.render();
+			this._aoBlurXPass.render( { colorViews: [ this.aoBlurX.texture ], clear: CLR } );
+			this._aoBlurYPass.render( { colorViews: [ this.aoBlurY.texture ], clear: CLR } );
+
+		}
 		this._mediumPass.render( { colorViews: [ this.medium.texture ], clear: CLR } );
 		// caustic shafts / torch beam march (half res): only while the lens can be under water (the CPU
 		// water height lags the GPU's by a frame: 1 m of margin)
