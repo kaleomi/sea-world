@@ -1386,6 +1386,11 @@ body {
 	opacity: 0.45;
 }
 
+/* players open the settings with Esc; the rail is a developer convenience (core/DevMode.js) */
+.tw-root:not(.is-dev) .tw-rail {
+	display: none;
+}
+
 .tw-rail:hover {
 	opacity: 1;
 }

@@ -6,6 +6,7 @@ import { TIDE, tideStage } from '../world/Tides.js';
 import { G } from '../core/Globals.js';
 import { GroundBounce } from '../materials/GroundBounce.js';
 import { getLocale, setLocale, LOCALES, t } from '../i18n/index.js';
+import { DEV } from '../core/DevMode.js';
 
 // Binds the Tidewater UI (panel + HUD) to the running app.
 const SEA = {
@@ -246,7 +247,7 @@ export class AppUI {
 			app.camera.updateProjectionMatrix();
 
 		} } );
-		view.addButton( { label: 'Free camera (F)', icon: 'camera', onClick: () => app.setFreeCam( ! app.freeCam ) } );
+		const freeCam = view.addButton( { label: 'Free camera (F)', icon: 'camera', onClick: () => app.setFreeCam( ! app.freeCam ) } );
 
 		// ---- Interface: the language. The panel, the HUD and the guide are built once at
 		// startup with the strings already in them, so switching means a reload: the choice
@@ -273,6 +274,12 @@ export class AppUI {
 
 			},
 		} );
+		if ( app.audio ) {
+
+			s.sound = ! app.audio.muted;
+			this.soundCtl = iface.addToggle( { label: 'Sound', object: s, key: 'sound', tooltip: 'N turns the sound on and off too.', onChange: ( v ) => app.audio.setMuted( ! v ) } );
+
+		}
 
 		// ---------------------------------------------------------------- Effects
 		const fx = ui.addTab( 'effects', 'Effects', 'effects' );
@@ -318,6 +325,56 @@ export class AppUI {
 		quality.addToggle( { label: 'Shadows', object: s, key: 'shadows', onChange: ( v ) => { app.shadows.enabled = v; } } );
 		s.ssr = true;
 		quality.addToggle( { label: 'Water reflections', object: s, key: 'ssr', tooltip: 'Screen-space reflections of the pier, boats and hills on the water.', onChange: ( v ) => { app.waterMaterial.params.ssr.value = v ? 1 : 0; } } );
+
+		// ---- what a player sees: the camera, the effects and the performance settings. The sea, shore
+		// and sky controls, the free camera and the side rail are developer tools (core/DevMode.js).
+		const devOnly = [ ocean, shoreTab, sky ];
+		const applyDev = ( on ) => {
+
+			for ( const tab of devOnly ) tab.setVisible( on );
+			freeCam.setVisible( on );
+			ui.root.classList.toggle( 'is-dev', on );
+			if ( ! on && devOnly.includes( ui.activeTab ) ) ui.selectTab( 'camera', false );
+
+		};
+		applyDev( DEV.on );
+		DEV.onChange( ( on ) => {
+
+			applyDev( on );
+			ui.toast( on ? 'Developer mode on' : 'Developer mode off' );
+
+		} );
+
+		// Esc opens and closes the settings, unless a game window (cooler, a trader, the map) is open:
+		// those close on Esc themselves
+		const game = app.game;
+		const gameWindowOpen = () => {
+
+			const hud = game && game.hud;
+			return !! ( hud && ( hud.invOpen || hud.standOpen || hud.catchOpen ) ) || !! ( game && game.mapOpen ) || !! ( game && game.guide && game.guide.open );
+
+		};
+		ui.escapeGuard = gameWindowOpen;
+		// The browser keeps the Esc that releases a captured mouse to itself, so a release nobody asked
+		// for (Esc, or switching away) opens the settings like a pause menu.
+		let locked = !! document.pointerLockElement;
+		document.addEventListener( 'pointerlockchange', () => {
+
+			const now = !! document.pointerLockElement;
+			if ( locked && ! now && ! ui.panelOpen && ! ui._help && ! ui._start && ! ui._photo && ! gameWindowOpen() ) {
+
+				ui.togglePanel( true );
+				ui._openedByUnlock = performance.now();
+
+			}
+			locked = now;
+
+		} );
+		ui.onPanelToggle = [ ui.onPanelToggle, ( open ) => {
+
+			if ( ! open && ! gameWindowOpen() ) app.input.requestLock();
+
+		} ].filter( Boolean );
 
 		this._t = 0;
 

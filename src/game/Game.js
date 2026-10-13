@@ -17,6 +17,9 @@ import { LEAGUES, DURATION, place } from './Tournament.js';
 import { GameHUD } from './GameHUD.js';
 import { Minimap } from './Minimap.js';
 import { Guide } from './Guide.js';
+import { WorldMap } from './WorldMap.js';
+import { Vendor } from './Vendor.js';
+import { GIVERS, beachSpot, currentQuest, questReady } from './Quests.js';
 import { t } from '../i18n/index.js';
 
 // how long the catch card stays up unless dismissed (ms)
@@ -45,6 +48,7 @@ export class Game {
 		this.landing = null; // { species, kg } while the caught fish swings in view
 		this.chandlery = new Chandlery( { scene: app.scene, terrain: app.terrainData, colliders: app.colliders, material: this.stand.material } );
 		this.vendors = [ this.stand.vendor, this.chandlery.vendor ];
+		this.addQuestGivers();
 		// boat upgrades: engine (thrust / top speed) and deck floodlights for night fishing
 		const b = app.boatCtl;
 		this._engineBase = { maxThrust: b.maxThrust, pitchSpeed: b.pitchSpeed };
@@ -63,6 +67,50 @@ export class Game {
 		this._tmp = new Vector3();
 		this.applyGear();
 		this.state.onChange( () => this.applyGear() );
+
+	}
+
+	// one quest giver on each outer island (Quests.js), on the beach that faces the home island
+	addQuestGivers() {
+
+		this.givers = [];
+		const T = this.app.terrainData;
+		for ( const o of ( T && T.outer ) || [] ) for ( const g of Object.values( GIVERS ) ) {
+
+			if ( g.island !== o.id ) continue;
+			const s = beachSpot( o, 0, 0 );
+			if ( ! s ) continue;
+			const v = new Vendor( {
+				name: g.name, kind: 'quest', position: new Vector3( s.x, T.heightAt( s.x, s.z ), s.z ), yaw: s.yaw, radius: 3.0,
+				greeting: g.greeting, material: this.stand.material, look: g.look,
+			} );
+			v.giver = g.id;
+			if ( this.app.scene ) this.app.scene.add( v.group );
+			this.vendors.push( v );
+			this.givers.push( v );
+
+		}
+
+	}
+
+	// hand in a quest giver's current job
+	completeQuest( id ) {
+
+		const r = this.state.completeQuest( id );
+		if ( ! r ) return null;
+		const done = t( 'Job done: {title} · ${v}', { title: t( r.quest.title ), v: r.reward } );
+		this.toast( r.last ? `${ done } · ${ t( 'Every job on the island is done!' ) }` : done, r.last ? 4500 : 3000 );
+		if ( this.app.audio && this.app.audio.coin ) this.app.audio.coin();
+		return r;
+
+	}
+
+	// a quest giver's state for the map markers: 'ready' (a job can be handed in), 'open', or 'done'
+	questState( id ) {
+
+		const q = currentQuest( id, this.state.quests );
+		if ( ! q ) return 'done';
+		return questReady( q, this.state.inventory, this.state.legends ) ? 'ready' : 'open';
 
 	}
 
@@ -204,6 +252,7 @@ export class Game {
 			// the minimap (lower right) and the first-play guide (intro, one-time tips; replay from F1)
 			this.minimap = new Minimap( ui.hud || ui.root, this );
 			this.guide = new Guide( ui, this, this.minimap );
+			this.worldMap = new WorldMap( ui.root, this, this.minimap );
 			ui.onReplayGuide = () => this.guide.replay();
 
 		}
@@ -225,20 +274,45 @@ export class Game {
 
 		}
 
-		if ( this.hud && ( inp.hit( 'KeyI' ) || inp.hit( 'Tab' ) ) ) this.hud.toggleInventory();
+		if ( this.hud && ( inp.hit( 'KeyI' ) || inp.hit( 'Tab' ) ) ) {
+
+			if ( this.worldMap ) this.worldMap.toggle( false );
+			this.hud.toggleInventory();
+
+		}
+
+		// M: the full map (it lets go of the mouse; closing it with M takes it back)
+		if ( this.worldMap && inp.hit( 'KeyM' ) && ! this.fight ) {
+
+			const open = ! this.worldMap.open;
+			if ( open ) {
+
+				this.hud.toggleInventory( false );
+				this.hud.closeStand();
+
+			}
+
+			this.worldMap.toggle( open );
+			if ( ! open ) app.input.requestLock();
+
+		}
+
 		if ( this.hud && inp.hit( 'Escape' ) ) {
 
 			this.hud.toggleInventory( false );
 			this.hud.closeStand();
+			if ( this.worldMap ) this.worldMap.toggle( false );
 
 		}
+
+		if ( this.worldMap ) this.worldMap.update();
 
 		// mouse edges (the left button also looks around while the pointer isn't captured)
 		const lmb = inp.mouseDown && inp.enabled, rmb = inp.rightDown && inp.enabled;
 		const lDown = lmb && ! this._lmb, lUp = ! lmb && this._lmb, rDown = rmb && ! this._rmb;
 		this._lmb = lmb;
 		this._rmb = rmb;
-		const panelOpen = this.hud && ( this.hud.invOpen || this.hud.standOpen );
+		const panelOpen = this.mapOpen || ( this.hud && ( this.hud.invOpen || this.hud.standOpen ) );
 
 		if ( rod.equipped && ! panelOpen ) {
 
@@ -440,7 +514,7 @@ export class Game {
 		for ( const v of this.vendors ) v.talking = !! ( hud && hud.standOpen && hud.vendor === v );
 		if ( hud && hud.standOpen && ( ! near || near !== hud.vendor ) ) hud.closeStand();
 		if ( ! near || this.fight || this._cardDismissed || ( hud && hud.catchOpen ) ) return;
-		if ( ! p.prompt ) p.prompt = { key: 'E', text: hud && hud.standOpen ? 'Leave' : `Talk to ${ near.name.split( ' ·' )[ 0 ] }` };
+		if ( ! p.prompt ) p.prompt = { key: 'E', text: hud && hud.standOpen ? 'Leave' : t( 'Talk to {name}', { name: t( near.name ).split( ' · ' )[ 0 ] } ) };
 		if ( inp.hit( 'KeyE' ) ) {
 
 			if ( ! hud ) {
@@ -457,7 +531,7 @@ export class Game {
 	sellAll() {
 
 		const r = this.state.sell();
-		if ( r.count ) this.toast( `Sold ${ r.count } fish for $${ r.total }` );
+		if ( r.count ) this.toast( t( 'Sold {n} fish for ${v}', { n: r.count, v: r.total } ) );
 		if ( this.app.audio && this.app.audio.coin ) this.app.audio.coin();
 		return r;
 
@@ -466,7 +540,7 @@ export class Game {
 	sell( ids ) {
 
 		const r = this.state.sell( ids );
-		if ( r.count ) this.toast( `Sold for $${ r.total }` );
+		if ( r.count ) this.toast( t( 'Sold for ${v}', { v: r.total } ) );
 		return r;
 
 	}
@@ -502,6 +576,12 @@ export class Game {
 		if ( o ) return o.def;
 		const half = T.size / 2;
 		return Math.abs( x ) < half && Math.abs( z ) < half ? WORLD.island : OPEN_SEA;
+
+	}
+
+	get mapOpen() {
+
+		return !! ( this.worldMap && this.worldMap.open );
 
 	}
 

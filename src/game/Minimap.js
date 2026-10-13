@@ -41,6 +41,9 @@ const CSS = /* css */`
 .gm-mk.is-marta > i { background: var(--tw-aqua); }
 .gm-mk.is-boat > i { background: #f2efe6; }
 .gm-mk.is-isle > i { background: #9fd27a; }
+.gm-mk.is-quest > i { background: #f0a35a; }
+.gm-mk.is-quest.is-done > i { background: #b9b2a4; opacity: 0.75; }
+.gm-mk.is-quest.is-ready > i { background: #ffd35a; }
 .gm-mk.is-peer > i { width: calc(12 * var(--tw-u)); height: calc(12 * var(--tw-u)); margin: calc(-6 * var(--tw-u)) 0 0 calc(-6 * var(--tw-u)); }
 .gm-mk.is-peer > b { margin-top: calc(-15 * var(--tw-u)); transform-origin: calc(5 * var(--tw-u)) calc(15 * var(--tw-u)); }
 .gm-mk > em { position: absolute; left: 0; top: calc(11 * var(--tw-u)); transform: translateX(-50%); font: 600 calc(9 * var(--tw-u)) var(--tw-mono); font-style: normal;
@@ -77,6 +80,7 @@ const ICON = {
 	fish: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 12c3-4 7-6 11-6 3 0 5 2 7 4l-2 2 2 2c-2 2-4 4-7 4-4 0-8-2-11-6Zm12-1.2a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4Z"/></svg>',
 	anchor: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="5" r="2"/><path d="M12 7v13M7 11h10M4 14c1 4 4 6 8 6s7-2 8-6"/></svg>',
 	boat: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v9H6l6-9Zm1 2 5 7h-5V5ZM3 14h18l-3 5H6l-3-5Z"/></svg>',
+	quest: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M10.2 3h3.6l-.6 12h-2.4Z"/><circle cx="12" cy="19.5" r="2"/></svg>',
 	isle: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M2 19c3-5 6-8 10-8s7 3 10 8H2Z"/><path d="M12 11V5m0 0c-2-1-4 0-5 2m5-2c2-1 4 0 5 2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
 };
 
@@ -156,6 +160,14 @@ export class Minimap {
 		// the other islands: a marker each (at sea), and a canvas each baked like the home island's
 		const outer = game.app.terrainData.outer || [];
 		for ( const o of outer ) this.markers.push( { id: o.id, ...mk( 'isle', ICON.isle ), pos: () => ( { x: o.cx, z: o.cz } ), hideWhen: () => ! atSea(), showDist: true } );
+		// the quest givers on the outer islands: shown within reach of their island
+		for ( const v of game.givers || [] ) this.markers.push( { id: v.giver, ...mk( 'quest', ICON.quest ), pos: () => ( { x: v.position.x, z: v.position.z } ),
+			hideWhen: () => {
+
+				const c = game.app.camera.position;
+				return Math.hypot( c.x - v.position.x, c.z - v.position.z ) > 700;
+
+			}, state: () => game.questState( v.giver ) } );
 		this.north = h( 'div', 'gm-map-n', t( 'N' ) );
 		this.marks.append( this.north );
 		this.fish = [ h( 'div', 'gm-map-fish', '<i></i><i></i>' ), h( 'div', 'gm-map-fish', '<i></i><i></i>' ) ];
@@ -416,6 +428,13 @@ export class Minimap {
 			if ( hide ) continue;
 			const edge = place( m.el, q.x - x, q.z - z, 12, m.arrow );
 			this._toggle( m.el, 'is-edge', edge );
+			if ( m.state ) {
+
+				const st = m.state();
+				this._toggle( m.el, 'is-ready', st === 'ready' );
+				this._toggle( m.el, 'is-done', st === 'done' );
+
+			}
 			if ( m.showDist && edge ) {
 
 				const km = Math.hypot( q.x - x, q.z - z ) / 1000;

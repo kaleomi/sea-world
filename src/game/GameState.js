@@ -3,6 +3,7 @@ import { defaultUpgrades, gearStats, nextLevel, UPGRADES, FUEL_PRICE } from './G
 import { medalFor, newMilestones, MILESTONES } from './Collection.js';
 import { newBoard, boardFromJSON, fillBoard, fillOrder, dropOrder, tierOf, TIERS } from './Orders.js';
 import { LEGENDS, legendBounty, legendsFromJSON } from './Legends.js';
+import { questsFromJSON, completeQuest } from './Quests.js';
 import { LEAGUES, newCircuit, circuitFromJSON, makeOffer, enter, weighIn, tick, withdraw } from './Tournament.js';
 
 const SAVE_KEY = 'tidewater.save.v1';
@@ -38,6 +39,7 @@ export class GameState {
 		this.orders = newBoard(); // Joe's orders and your reputation with him (Orders.js)
 		this.claimed = []; // collection milestones already paid (Collection.js)
 		this.legends = {}; // the trophy wall: legend id -> { count, bestKg } (Legends.js)
+		this.quests = questsFromJSON( null ); // the outer islands' quest givers: id -> jobs done (Quests.js)
 		this.rng = Math.random;
 		fillBoard( this.orders, this.rng );
 		this.circuit = newCircuit(); // tournaments: the league, the one on offer, the one running (Tournament.js)
@@ -226,6 +228,20 @@ export class GameState {
 
 	}
 
+	// hand in giver `id`'s current job (Quests.js): { quest, fish, reward, last } or null when it isn't ready
+	completeQuest( id ) {
+
+		const r = completeQuest( id, this.quests, this.inventory, this.legends );
+		if ( ! r ) return null;
+		const gone = new Set( r.fish.map( ( f ) => f.id ) );
+		this.inventory = this.inventory.filter( ( f ) => ! gone.has( f.id ) );
+		this.money += r.reward;
+		this.save();
+		this.emit();
+		return r;
+
+	}
+
 	// hand Joe the fish for order `id`: { order, fish, reward, rep, tierUp } or null when the cooler
 	// doesn't hold enough matching fish
 	fillOrder( id ) {
@@ -355,7 +371,7 @@ export class GameState {
 
 	toJSON() {
 
-		return { v: SAVE_VERSION, money: this.money, inventory: this.inventory, log: this.log, upgrades: this.upgrades, fuel: this.fuel, orders: this.orders, claimed: this.claimed, legends: this.legends, circuit: this.circuit, nextId: this._nextId };
+		return { v: SAVE_VERSION, money: this.money, inventory: this.inventory, log: this.log, upgrades: this.upgrades, fuel: this.fuel, orders: this.orders, claimed: this.claimed, legends: this.legends, quests: this.quests, circuit: this.circuit, nextId: this._nextId };
 
 	}
 
@@ -376,6 +392,7 @@ export class GameState {
 		fillBoard( this.orders, this.rng );
 		this.claimed = Array.isArray( d.claimed ) ? d.claimed.filter( ( id ) => MILESTONES.some( ( m ) => m.id === id ) ) : [];
 		this.legends = legendsFromJSON( d.legends );
+		this.quests = questsFromJSON( d.quests ); // saves from before the quests start at the first job
 		this.circuit = circuitFromJSON( d.circuit );
 		if ( ! this.circuit.active && ! this.circuit.offer ) this.circuit.offer = makeOffer( this.circuit, this.rng );
 		this._nextId = Math.max( d.nextId | 0, ...this.inventory.map( ( f ) => f.id + 1 ), 1 );
@@ -476,6 +493,7 @@ export class GameState {
 		fillBoard( this.orders, this.rng );
 		this.claimed = [];
 		this.legends = {};
+		this.quests = questsFromJSON( null );
 		this.circuit = newCircuit();
 		this.circuit.offer = makeOffer( this.circuit, this.rng );
 		this.save();

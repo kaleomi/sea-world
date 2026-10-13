@@ -3,6 +3,7 @@ import { App } from './App.js';
 import { UI } from './ui/UI.js';
 import { AppUI } from './ui/AppUI.js';
 import { t } from './i18n/index.js';
+import { DEV } from './core/DevMode.js';
 
 // ?bench runs in background tabs too (automation): rAF does not fire in a hidden page
 if ( /[?&]bench\b/.test( location.search ) ) {
@@ -13,6 +14,8 @@ if ( /[?&]bench\b/.test( location.search ) ) {
 
 }
 
+// developer tools stay hidden unless the code is typed (core/DevMode.js)
+DEV.init().watch( window );
 const ui = new UI();
 const app = new App();
 window.__ui = ui;

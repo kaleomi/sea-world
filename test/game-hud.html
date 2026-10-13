@@ -8,11 +8,13 @@
 <body>
 <script type="module">
 // Dev page: the fishing game's HUD in every state, over a flat sky / sea backdrop.
-// ?view=fight | inv | dex | stand | shop | cast | bite | catch | record | newspecies | full | milestone | legend | tour | online
+// ?view=fight | inv | dex | stand | shop | cast | bite | catch | record | newspecies | full | milestone | legend | tour | online | quest | map
 import '../src/ui/ui.css';
 import { GameHUD } from '../src/game/GameHUD.js';
 import { GameState } from '../src/game/GameState.js';
 import { place } from '../src/game/Tournament.js';
+import { GIVERS } from '../src/game/Quests.js';
+import { WorldMap } from '../src/game/WorldMap.js';
 
 const view = new URLSearchParams( location.search ).get( 'view' ) || 'fight';
 const root = document.createElement( 'div' );
@@ -53,6 +55,42 @@ if ( view === 'online' ) {
 
 }
 const h = new GameHUD( ui, game );
+// ?view=quest: Nalu on the atoll, the first job half done
+if ( view === 'quest' ) {
+
+	state.addFish( 'tang', 0.34, 9 );
+	state.addFish( 'chromis', 0.06, 9 );
+	game.completeQuest = ( id ) => state.completeQuest( id );
+	h.openStand( { kind: 'quest', giver: 'nalu', name: GIVERS.nalu.name } );
+
+}
+
+// ?view=map: the full map over stand-in island bakes (a disc per island), you at sea near the atoll
+if ( view === 'map' ) {
+
+	const layer = ( x0, z0, ext, r, color ) => {
+
+		const c = document.createElement( 'canvas' );
+		c.width = c.height = 256;
+		const g = c.getContext( '2d' );
+		g.fillStyle = '#0c2c4e'; g.fillRect( 0, 0, 256, 256 );
+		g.fillStyle = '#3ebabe'; g.beginPath(); g.arc( 128, 128, r * 1.3, 0, 7 ); g.fill();
+		g.fillStyle = color; g.beginPath(); g.arc( 128, 128, r, 0, 7 ); g.fill();
+		return { canvas: c, x0, z0, n: 256, ppm: 256 / ext };
+
+	};
+	const minimap = { _layers: [ layer( - 640, - 820, 1280, 70, '#80a058' ), layer( 1888, 1088, 1024, 60, '#e8d8ac' ), layer( - 3112, 388, 1024, 50, '#5a6a50' ) ] };
+	const e = new Array( 16 ).fill( 0 );
+	e[ 8 ] = 0.6; e[ 10 ] = 0.8; // looking north-west-ish
+	game.app = { camera: { matrixWorld: { elements: e }, position: { x: 1900, z: 1300 } }, player: { mode: 'boat' }, boatCtl: { position: { x: 1900, z: 1300 } },
+		net: { remote: { positions: () => [ { x: 300, z: 200, color: '#9b6ad6', name: 'Marisol' } ] } } };
+	game.givers = [ { giver: 'nalu', name: GIVERS.nalu.name, position: { x: 2142, z: 1428 } }, { giver: 'tama', name: GIVERS.tama.name, position: { x: - 2295, z: 794 } } ];
+	game.questState = ( id ) => ( id === 'nalu' ? 'ready' : 'open' );
+	const map = new WorldMap( root, game, minimap );
+	map.toggle( true );
+	setTimeout( () => map.update(), 50 );
+
+}
 const fight = { tension: 0.62, band: [ 0.35, 0.8 ], stamina: 0.55, distance: 11.4, surge: 0.1 };
 h.update( { fuel: { litres: 23, tank: 40 }, sonar: { depth: 12.4, fish: 0.5 }, fight: view === 'fight' ? fight : null, casting: view === 'cast', power: 0.7, bite: view === 'bite', aiming: true, tourney: null } );
 if ( view === 'tour' ) {

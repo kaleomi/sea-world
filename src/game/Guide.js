@@ -350,7 +350,7 @@ export class Guide {
 
 			const bt = app.boatCtl;
 			if ( bt && Math.hypot( bt.position.x - p.position.x, bt.position.z - p.position.z ) < 9 ) this.tip( 'boat' );
-			for ( const v of g.vendors ) if ( v.inRange( p.position ) ) this.tip( v.kind === 'buyer' ? 'joe' : 'marta' );
+			for ( const v of g.vendors ) if ( v.inRange( p.position ) ) if ( v.kind !== 'quest' ) this.tip( v.kind === 'buyer' ? 'joe' : 'marta' );
 
 		}
 

@@ -1945,7 +1945,7 @@ export class UI {
 		this.sparkEl = stats.querySelector( '.tw-spark' );
 
 		const brand = h( 'div', 'tw-brand' );
-		brand.innerHTML = `${ brandMark() }<span class="tw-brand-name">TIDEWATER</span>`;
+		brand.innerHTML = `${ brandMark() }<span class="tw-brand-name">${ t( 'TIDEWATER' ) }</span>`;
 		this.modeEl = h( 'div', 'tw-mode is-empty', { role: 'status' } );
 		this.modeIco = h( 'span', 'tw-mode-ico' );
 		this.modeText = h( 'span', 'tw-mode-text' );
@@ -2085,7 +2085,7 @@ export class UI {
 
 		action( 'viewfinder', 'Photo mode (P)', () => this.setPhotoMode( true ) );
 		action( 'help', 'Controls (F1)', () => this.toggleHelp() );
-		action( 'chevrons-right', 'Collapse (H)', () => this.togglePanel( false ) );
+		action( 'chevrons-right', 'Close (Esc)', () => this.togglePanel( false ) );
 		head.append( actions );
 
 		this.tabBar = h( 'div', 'tw-tabs', { role: 'tablist', 'aria-label': t( 'Settings sections' ) } );
@@ -2110,7 +2110,7 @@ export class UI {
 		this.pages = h( 'div', 'tw-pages' );
 
 		const foot = h( 'footer', 'tw-panel-foot' );
-		foot.innerHTML = `<span><kbd>H</kbd>${ t( 'Hide' ) }</span><span><kbd>F1</kbd>${ t( 'Controls' ) }</span><span><kbd>P</kbd>${ t( 'Photo mode' ) }</span>`;
+		foot.innerHTML = `<span><kbd>Esc</kbd>${ t( 'Back to the game' ) }</span><span><kbd>F1</kbd>${ t( 'Controls' ) }</span><span><kbd>P</kbd>${ t( 'Photo mode' ) }</span>`;
 		panel.append( head, this.tabBar, this.pages, foot );
 
 		// collapsed state: a slim rail of tab icons
@@ -2139,7 +2139,7 @@ export class UI {
 				<header class="tw-help-head">
 					<div>
 						<h2 id="tw-help-title">${ t( 'Controls' ) }</h2>
-						<p>${ t( 'Click the view to capture the mouse. Esc releases it.' ) }</p>
+						<p>${ t( 'Click the view to capture the mouse. Esc opens the settings.' ) }</p>
 					</div>
 					<button type="button" class="tw-icon-btn tw-help-close" aria-label="${ t( 'Close' ) }" data-tip="${ t( 'Close (F1)' ) }">${ icon( 'close' ) }</button>
 				</header>
@@ -2160,17 +2160,15 @@ export class UI {
 						${ row( k( 'LMB' ), t( 'Cast, strike, reel<small>Hold to wind up / reel</small>' ) ) }
 						${ row( k( 'RMB' ), t( 'Reel in an empty line' ) ) }
 						${ row( k( 'I' ), t( 'Cooler and fish log' ) ) }
-						${ row( k( 'F' ), t( 'Free camera' ) ) }
-						${ row( k( 'T' ), t( 'Pause time' ) ) }
+						${ row( k( 'M' ), t( 'Map' ) ) }
 						${ row( k( 'L' ), t( 'Flashlight' ) ) }
-						${ row( k( 'M' ), t( 'Mute' ) ) }
+						${ row( k( 'N' ), t( 'Mute' ) ) }
 					</section>
 					<section>
 						<h3>${ t( 'Interface' ) }</h3>
-						${ row( k( 'H' ), t( 'Settings panel' ) ) }
+						${ row( k( 'Esc' ), t( 'Settings<small>Picture, effects, camera, sound</small>' ) ) }
 						${ row( k( 'P' ), t( 'Photo mode<small>Hides all interface</small>' ) ) }
 						${ row( k( 'F1' ) + k( '?' ), t( 'This sheet' ) ) }
-						${ row( k( 'Esc' ), t( 'Release the mouse' ) ) }
 					</section>
 				</div>
 				<div class="tw-help-guide">
@@ -2195,13 +2193,14 @@ export class UI {
 		el.innerHTML = `
 			<div class="tw-start-inner">
 				${ brandMark( 'tw-start-mark' ) }
-				<div class="tw-start-title">TIDEWATER</div>
+				<div class="tw-start-title">${ t( 'TIDEWATER' ) }</div>
 				<button type="button" class="tw-start-cta"><span class="tw-start-pulse" aria-hidden="true"></span>${ icon( 'mouse' ) }<span>${ t( 'Click to explore' ) }</span></button>
 				<div class="tw-start-keys">
 					<span><span class="tw-wasd"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span>${ t( 'Move' ) }</span>
 					<span><kbd class="tw-kbd-ico">${ icon( 'mouse' ) }</kbd>${ t( 'Look' ) }</span>
 					<span><kbd>E</kbd>${ t( 'Interact' ) }</span>
-					<span><kbd>H</kbd>${ t( 'Settings' ) }</span>
+					<span><kbd>M</kbd>${ t( 'Map' ) }</span>
+					<span><kbd>Esc</kbd>${ t( 'Settings' ) }</span>
 					<span><kbd>F1</kbd>${ t( 'All controls' ) }</span>
 				</div>
 			</div>`;
@@ -2367,13 +2366,19 @@ export class UI {
 
 			if ( this._menu ) this._closeMenu( true );
 			else if ( this._help ) this.toggleHelp( false );
+			else if ( e.repeat || this._start ) return;
+			else if ( this._photo ) this.setPhotoMode( false );
+			else if ( this.escapeGuard && this.escapeGuard() ) return; // a game window takes this Esc
+			else if ( document.pointerLockElement ) this.togglePanel( true );
+			else if ( this._panelOpen && performance.now() - ( this._openedByUnlock || - 1e9 ) < 400 ) return; // the same Esc already opened it
+			else this.togglePanel();
 			return;
 
 		}
 
 		if ( e.repeat || this._start ) return;
 
-		if ( e.code === 'KeyH' ) {
+		if ( e.code === 'KeyH' && this.root.classList.contains( 'is-dev' ) ) {
 
 			if ( this._photo ) this.setPhotoMode( false );
 			this.togglePanel();

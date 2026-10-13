@@ -63,6 +63,7 @@ import { FlyCamera } from './player/FlyCamera.js';
 import { Player } from './player/Player.js';
 import { Game } from './game/Game.js';
 import { Multiplayer } from './net/Multiplayer.js';
+import { DEV } from './core/DevMode.js';
 import { STAND } from './game/FishStand.js';
 import { CHANDLERY } from './game/Chandlery.js';
 import { BoatController } from './player/BoatController.js';
@@ -364,7 +365,7 @@ fn terrainWetness( xz: vec2f, h: f32 ) -> vec2f {
 			village: this.village, colliders: this.colliders, vegetation: this.vegetation, boat: this.boatCtl, boatModel: this.boat,
 			query: this.query, spray: this.spray, csm: this.csm,
 		} );
-		this.freeCam = qs.has( 'fly' );
+		this.freeCam = qs.has( 'fly' ) && DEV.on;
 
 		// ---------------------------------------------------------------- post
 		await progress( 0.34, t( 'Preparing the shaders…' ) );
@@ -667,8 +668,10 @@ fn terrainWetness( xz: vec2f, h: f32 ) -> vec2f {
 		TIDE.update( G.time.value, s.tideAmplitude, s.tidePeriod, s.tidePhase );
 
 		// ---- player / boat (boat physics first so the cameras follow this frame's pose)
-		if ( this.input.hit( 'KeyF' ) ) this.setFreeCam( ! this.freeCam );
-		if ( this.input.hit( 'KeyT' ) ) this.toggleTime();
+		// the free camera and pausing time are developer tools (core/DevMode.js)
+		if ( DEV.on && this.input.hit( 'KeyF' ) ) this.setFreeCam( ! this.freeCam );
+		if ( DEV.on && this.input.hit( 'KeyT' ) ) this.toggleTime();
+		if ( ! DEV.on && this.freeCam ) this.setFreeCam( false );
 		if ( this.input.hit( 'KeyL' ) ) {
 
 			const on = this.localLights.toggleFlashlight();
@@ -676,12 +679,20 @@ fn terrainWetness( xz: vec2f, h: f32 ) -> vec2f {
 
 		}
 
-		if ( this.input.hit( 'KeyM' ) && this.audio ) {
+		if ( this.input.hit( 'KeyN' ) && this.audio ) {
 
 			this.audio.setMuted( ! this.audio.muted );
-			if ( this.ui ) this.ui.ui.toast( this.audio.muted ? 'Sound off' : 'Sound on' );
+			if ( this.ui ) {
+
+				this.ui.ui.toast( this.audio.muted ? 'Sound off' : 'Sound on' );
+				// the settings' sound switch follows
+				this.ui.s.sound = ! this.audio.muted;
+				if ( this.ui.soundCtl ) this.ui.soundCtl.update();
+
+			}
 
 		}
+
 		this.boatCtl.update( dt );
 		this.boatSpray.update( dt );
 		this.wake.update( dt );

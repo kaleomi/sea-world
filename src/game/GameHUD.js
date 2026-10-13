@@ -3,7 +3,8 @@ import { UPGRADES, nextLevel, FUEL_PRICE } from './Gear.js';
 import { FishPortrait } from './FishPortrait.js';
 import { TIERS, matchingFish, ordersFor } from './Orders.js';
 import { MEDALS, collectionStats, medalKg, nextMilestones, whereToFind, milestoneText } from './Collection.js';
-import { LEGENDS, LEGEND_IDS } from './Legends.js';
+import { LEGENDS, LEGEND_IDS, legendTitle } from './Legends.js';
+import { GIVERS, currentQuest, questProgress } from './Quests.js';
 import { LEAGUES, RIVALS, DURATION, standings } from './Tournament.js';
 import { errorText } from '../net/NetClient.js';
 import { t } from '../i18n/index.js';
@@ -97,6 +98,8 @@ const CSS = /* css */`
 .gm-order small { display: block; color: var(--tw-ink-3); font-size: var(--tw-fs-sm); margin-top: 2px; }
 .gm-order small.is-ready { color: var(--tw-aqua); }
 .gm-order .gm-val { font-family: var(--tw-mono); color: var(--tw-sun); }
+.gm-quest-text { margin: var(--tw-2) 0 var(--tw-1); color: var(--tw-ink-2); font-size: var(--tw-fs-sm); font-style: italic; }
+.gm-quest-step { color: var(--tw-ink-3); font-size: var(--tw-fs-sm); }
 .gm-dex { display: grid; grid-template-columns: 1fr 1fr; gap: var(--tw-2); }
 .gm-dex-card { display: grid; grid-template-columns: auto 1fr; gap: 2px var(--tw-2); align-items: center; padding: var(--tw-2); border-radius: 8px; background: var(--tw-fill); }
 .gm-dex-card b { font-weight: 600; }
@@ -297,7 +300,7 @@ export class GameHUD {
 
 		this._last.money = s.money;
 		if ( this.invOpen ) this.renderInventory();
-		if ( this.standOpen ) this.vendor && this.vendor.kind === 'shop' ? this.renderShop() : this.renderStand();
+		if ( this.standOpen ) this.renderVendor();
 
 	}
 
@@ -314,7 +317,7 @@ export class GameHUD {
 			this.derbyEl.querySelector( '.gm-derby-p' ).textContent = t( PLACES[ tourney.place - 1 ] );
 			this.derbyEl.classList.toggle( 'is-ending', s <= 30 );
 			// the stand's board follows the clock while it is open
-			if ( this.standOpen && this.vendor && this.vendor.kind !== 'shop' && s !== this._derbyShown ) this.renderStand();
+			if ( this.standOpen && this.vendor && this.vendor.kind === 'buyer' && s !== this._derbyShown ) this.renderStand();
 			this._derbyShown = s;
 
 		}
@@ -666,10 +669,19 @@ export class GameHUD {
 		this.standOpen = true;
 		this.vendor = vendor;
 		this.toggleInventory( false );
-		if ( vendor.kind === 'shop' ) this.renderShop();
-		else this.renderStand();
+		this.renderVendor();
 		this.stand.classList.add( 'is-open' );
 		releaseMouse();
+
+	}
+
+	// the panel for the vendor you're talking to: Joe's stand, Marta's shop, or a quest giver's jobs
+	renderVendor() {
+
+		const k = this.vendor && this.vendor.kind;
+		if ( k === 'shop' ) this.renderShop();
+		else if ( k === 'quest' ) this.renderQuest();
+		else this.renderStand();
 
 	}
 
@@ -773,6 +785,45 @@ GameHUD.prototype.renderShop = function () {
 	for ( const b of this.stand.querySelectorAll( '[data-buy]' ) ) b.onclick = () => this.game.buy( b.dataset.buy );
 	const f = this.stand.querySelector( '[data-fuel]' );
 	if ( f ) f.onclick = () => this.game.refuel();
+
+};
+
+// a quest giver on an outer island (Quests.js): their current job, what the cooler (or the trophy
+// wall) already has towards it, and the hand-in button
+GameHUD.prototype.renderQuest = function () {
+
+	const s = this.game.state, v = this.vendor, g = GIVERS[ v.giver ];
+	const q = currentQuest( g.id, s.quests );
+	let body = '';
+	let ready = false;
+	if ( q ) {
+
+		const p = questProgress( q, s.inventory, s.legends );
+		ready = p.ready;
+		const rows = p.rows.map( ( r ) => {
+
+			const ok = r.have >= r.count;
+			if ( r.legend ) return `<div class="gm-order"><span>${ legendTitle( r.legend ) }<small class="${ ok ? 'is-ready' : '' }">${ t( ok ? 'On your trophy wall' : 'Not landed yet' ) }</small></span><span></span><span></span><span></span></div>`;
+			const n = r.need;
+			const what = t( '{n} × {name}', { n: n.count, name: t( FISH[ n.species ].name ) } );
+			const detail = t( 'at least {kg} kg · {have} of {n} in the cooler', { kg: n.minKg < 1 ? n.minKg.toFixed( 2 ) : n.minKg.toFixed( 1 ), have: r.have, n: n.count } );
+			return `<div class="gm-order"><span>${ what }<small class="${ ok ? 'is-ready' : '' }">${ detail }</small></span><span></span><span></span><span></span></div>`;
+
+		} ).join( '' );
+		const step = t( 'Job {i} of {n}', { i: ( s.quests[ g.id ] | 0 ) + 1, n: g.quests.length } );
+		body = `<div class="gm-orders"><div class="gm-orders-head"><b>${ t( q.title ) }</b><span class="gm-quest-step">${ step }</span></div>
+			<p class="gm-quest-text">“${ t( q.text ) }”</p>${ rows }</div>`;
+
+	}
+
+	this.stand.innerHTML = `
+		<h2>${ t( v.name ) }</h2>
+		<p class="gm-sub">${ t( q ? g.greeting : g.done ) }</p>
+		${ body }
+		<div class="gm-foot"><button class="gm-btn is-ghost" data-close>${ t( 'Leave (E)' ) }</button>${ q ? `<button class="gm-btn" data-quest ${ ready ? '' : 'disabled' }>${ t( 'Hand in · ${v}', { v: q.reward } ) }</button>` : '' }</div>`;
+	this.stand.querySelector( '[data-close]' ).onclick = () => this.closeStand();
+	const b = this.stand.querySelector( '[data-quest]' );
+	if ( b ) b.onclick = () => this.game.completeQuest( g.id );
 
 };
 

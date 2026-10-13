@@ -1,4 +1,31 @@
 // Keyboard / mouse input with pointer lock support.
+
+// Browsers sometimes report a single mouse move hundreds of pixels long under pointer lock (the cursor
+// "warping" back on Windows, right after locking, after a frame hitch), which spun the view round in one
+// go. A move that is far bigger than the ones just before it, or arrives just after (un)locking, is
+// dropped; ordinary fast flicks build up over several events and pass.
+const LOOK_SETTLE_MS = 120; // ignore motion this long after pointer lock changes
+const LOOK_SPIKE = 180; // px in one event that counts as a jump...
+const LOOK_SPIKE_RATIO = 6; // ...when it is this many times the recent typical move
+
+export function newLookState() {
+
+	return { avg: 0, since: - Infinity };
+
+}
+
+// -> { x, y } to apply, or null to drop the event
+export function filterLook( st, dx, dy, now ) {
+
+	if ( ! Number.isFinite( dx ) || ! Number.isFinite( dy ) ) return null;
+	if ( now - st.since < LOOK_SETTLE_MS ) return null;
+	const m = Math.hypot( dx, dy );
+	if ( m > LOOK_SPIKE && m > LOOK_SPIKE_RATIO * Math.max( st.avg, 8 ) ) return null;
+	st.avg += ( m - st.avg ) * 0.2;
+	return { x: dx, y: dy };
+
+}
+
 export class Input {
 
 	constructor( dom ) {
@@ -12,6 +39,7 @@ export class Input {
 		this.rightDown = false;
 		this.locked = false;
 		this.enabled = true;
+		this._lookState = newLookState();
 
 		window.addEventListener( 'keydown', ( e ) => {
 
@@ -41,8 +69,13 @@ export class Input {
 
 			if ( this.locked || this.mouseDown || this.rightDown ) {
 
-				this.look.x += e.movementX;
-				this.look.y += e.movementY;
+				const d = filterLook( this._lookState, e.movementX, e.movementY, e.timeStamp );
+				if ( d ) {
+
+					this.look.x += d.x;
+					this.look.y += d.y;
+
+				}
 
 			}
 
@@ -57,6 +90,7 @@ export class Input {
 		document.addEventListener( 'pointerlockchange', () => {
 
 			this.locked = document.pointerLockElement === dom;
+			this._lookState.since = performance.now(); // the first moves after (un)locking can carry a jump
 
 		} );
 
@@ -64,7 +98,20 @@ export class Input {
 
 	requestLock() {
 
-		if ( ! this.locked ) this.dom.requestPointerLock?.()?.catch?.( () => {} );
+		if ( this.locked || ! this.dom.requestPointerLock ) return;
+		// raw mouse motion where supported: no OS acceleration, and none of the jumps Windows can send
+		let p;
+		try {
+
+			p = this.dom.requestPointerLock( { unadjustedMovement: true } );
+
+		} catch ( e ) {
+
+			p = null;
+
+		}
+
+		if ( p && p.catch ) p.catch( () => this.dom.requestPointerLock()?.catch?.( () => {} ) );
 
 	}
 
