@@ -151,7 +151,17 @@ npm run dev      # http://127.0.0.1:5189
 npm run build    # static build in dist/
 ```
 
-Every push to `main` deploys to GitHub Pages through `.github/workflows/deploy.yml`.
+Every push to `main` deploys to GitHub Pages through `.github/workflows/deploy.yml`, and to
+Cloudflare Pages as well when the repository has two Actions secrets:
+
+1. In Cloudflare, create an API token with the **Cloudflare Pages: Edit** permission, and copy your
+   account ID (shown on the account's Workers & Pages overview).
+2. In the GitHub repository, under Settings → Secrets and variables → Actions, add them as
+   `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`, then re-run the latest deploy.
+3. The first run creates the Pages project `sea-world`. To serve it on your own domain, open it in
+   Cloudflare (Workers & Pages → sea-world → Custom domains) and add the domain or a subdomain.
+
+`public/_headers` tells Cloudflare to cache the hashed build files for a year.
 
 ## Multiplayer (shared sea)
 

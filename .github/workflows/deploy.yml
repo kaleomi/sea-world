@@ -1,4 +1,5 @@
 name: Deploy to GitHub Pages
+# and to Cloudflare Pages too, once the repo has the CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID secrets
 
 on:
   push:
@@ -42,3 +43,25 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
+
+  # the same tested build, uploaded to the Cloudflare Pages project "sea-world" (custom domain set in the
+  # Cloudflare dashboard). Skips itself without the secrets, so forks and GitHub Pages alone keep working.
+  cloudflare:
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: github-pages
+      - name: Deploy to Cloudflare Pages
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::notice::No Cloudflare secrets, skipping the Cloudflare Pages deploy"; exit 0
+          fi
+          mkdir dist && tar -xf artifact.tar -C dist
+          npx --yes wrangler@4 pages project list | grep -qw sea-world \
+            || npx --yes wrangler@4 pages project create sea-world --production-branch main
+          npx --yes wrangler@4 pages deploy dist --project-name sea-world --branch main --commit-dirty=true
