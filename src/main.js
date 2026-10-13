@@ -19,15 +19,37 @@ if ( /[?&]bench\b/.test( location.search ) ) {
 
 // The graphics card gave up (out of memory or a driver timeout): the canvas stays black. Say so, and
 // reload at a lower quality (core/Quality.js remembers it).
-GPU.onDeviceLost = () => {
+const LOST_KEY = 'tidewater.gpuLost';
+const remember = ( k, v ) => {
+
+	try {
+
+		if ( v === undefined ) return localStorage.getItem( k );
+		localStorage.setItem( k, v );
+
+	} catch ( e ) { /* private mode */ }
+
+	return null;
+
+};
+const adapterName = () => {
+
+	const i = ( GPU.adapter && GPU.adapter.info ) || {};
+	return [ i.vendor, i.architecture, i.description ].filter( Boolean ).join( ' ' );
+
+};
+
+GPU.onDeviceLost = ( info ) => {
 
 	const level = app.quality ? app.quality.onDeviceLost() : 'low';
+	remember( LOST_KEY, String( Date.now() ) );
 	if ( document.getElementById( 'tw-lost' ) ) return;
 	const el = document.createElement( 'div' );
 	el.id = 'tw-lost';
 	el.style.cssText = 'position:fixed;inset:0;z-index:100000;display:flex;align-items:center;justify-content:center;background:rgba(6,10,16,0.92);color:#e8eef2;font:16px/1.6 system-ui,sans-serif;text-align:center;padding:24px';
 	el.innerHTML = `<div style="max-width:460px"><div style="font-size:20px;font-weight:700;margin-bottom:10px">${ t( 'The graphics card stopped responding' ) }</div>
 		<div style="opacity:.85;margin-bottom:18px">${ t( 'It probably ran out of memory or took too long on a frame. The game will reload with {q} graphics.', { q: t( level === 'low' ? 'Low' : 'Medium' ) } ) }</div>
+		<div style="opacity:.55;font-size:12px;margin:-8px 0 16px;word-break:break-word">${ [ adapterName(), info && info.message ].filter( Boolean ).join( ' · ' ) }</div>
 		<button style="font:600 16px system-ui,sans-serif;padding:10px 22px;border-radius:10px;border:0;background:#5fd3cf;color:#08141c;cursor:pointer">${ t( 'Reload' ) }</button></div>`;
 	el.querySelector( 'button' ).addEventListener( 'click', () => location.reload() );
 	document.body.append( el );
@@ -44,6 +66,17 @@ window.__ui = ui;
 app.init( ( p, text, until ) => ui.setLoading( p, text, until ) ).then( async () => {
 
 	app.ui = new AppUI( app, ui );
+	// a laptop running the game on its integrated graphics (Windows hands browsers the power-saving GPU
+	// unless told otherwise): say once how to switch to the dedicated card
+	const ai = ( GPU.adapter && GPU.adapter.info ) || {};
+	const integrated = ai.vendor === 'intel' || ( ai.vendor === 'amd' && /radeon\(tm\) graphics|vega/i.test( ai.description || '' ) );
+	if ( integrated && /Windows/.test( navigator.userAgent ) && ! remember( 'tidewater.igpuHint' ) ) {
+
+		remember( 'tidewater.igpuHint', '1' );
+		setTimeout( () => ui.toast( t( 'The game is running on integrated graphics. If this computer has an NVIDIA or AMD card, set the browser to "High performance" in Windows Settings → Display → Graphics and restart the browser.' ), 12000 ), 4000 );
+
+	}
+
 	if ( app.quality ) app.quality.onChange = ( level ) => ui.toast( t( 'Running slowly: graphics lowered to {q}', { q: t( level === 'low' ? 'Low' : level === 'medium' ? 'Medium' : 'High' ) } ), 4000 );
 	ui.setLoading( 1, t( 'Ready' ) );
 	await ui.hideLoader();
@@ -87,6 +120,9 @@ app.init( ( p, text, until ) => ui.setLoading( p, text, until ) ).then( async ()
 function startupError( e ) {
 
 	if ( ! navigator.gpu ) return t( 'This browser does not support WebGPU. Open the game in a recent Chrome, Edge or Safari.' );
+	// right after a lost device the browser may switch WebGPU off until it restarts
+	const lost = Number( remember( LOST_KEY ) ) || 0;
+	if ( /No WebGPU adapter/.test( e && e.message ) && Date.now() - lost < 6 * 3600e3 ) return t( 'The graphics card stopped responding earlier, so the browser has switched WebGPU off for now. Close every browser window, open the browser again and reload the game.' );
 	if ( /No WebGPU adapter/.test( e && e.message ) ) return t( 'No graphics card is available to WebGPU. Turn on hardware acceleration in the browser settings, or update the graphics driver.' );
 	return t( 'Something went wrong: ' ) + ( e && e.message );
 

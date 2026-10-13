@@ -807,4 +807,6 @@ export const ZH_CN = {
 	'The graphics card stopped responding': '显卡没有响应了',
 	'It probably ran out of memory or took too long on a frame. The game will reload with {q} graphics.': '可能是显存不够，或者某一帧画得太久。重新加载后会改用“{q}”画质。',
 	'Reload': '重新加载',
+	'The game is running on integrated graphics. If this computer has an NVIDIA or AMD card, set the browser to "High performance" in Windows Settings → Display → Graphics and restart the browser.': '游戏现在用的是集成显卡。如果电脑有 NVIDIA 或 AMD 独立显卡，请在 Windows 设置 → 系统 → 屏幕 → 显示卡 里把浏览器设成“高性能”，然后重启浏览器。',
+	'The graphics card stopped responding earlier, so the browser has switched WebGPU off for now. Close every browser window, open the browser again and reload the game.': '刚才显卡出过错，浏览器暂时停用了 WebGPU。请关闭浏览器的所有窗口，重新打开浏览器，再进入游戏。',
 };

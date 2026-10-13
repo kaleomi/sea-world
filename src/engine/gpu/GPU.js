@@ -33,6 +33,10 @@ export const GPU = {
 		const adapter = await navigator.gpu.requestAdapter( { powerPreference: 'high-performance' } ) || await navigator.gpu.requestAdapter();
 		if ( ! adapter ) throw new Error( 'No WebGPU adapter found.' );
 		this.adapter = adapter;
+		// which graphics card the browser gave us (on Windows it ignores powerPreference: a laptop's
+		// integrated GPU unless the browser is set to high performance in Windows' graphics settings)
+		const ai = adapter.info || {};
+		console.info( 'WebGPU adapter:', [ ai.vendor, ai.architecture, ai.device, ai.description ].filter( Boolean ).join( ' · ' ) || '(no info)' );
 
 		const L = adapter.limits;
 		const want = {
