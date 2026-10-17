@@ -15,6 +15,13 @@ const check = ( ok, msg ) => {
 
 };
 
+// a fixed sequence, so the bite counts below are the same on every run
+function seeded( s ) {
+
+	return () => ( ( s = ( s * 1664525 + 1013904223 ) >>> 0 ) / 4294967296 );
+
+}
+
 const TC = { x: Math.cos( TRENCH.angle ) * ( TRENCH.r0 + TRENCH.r1 ) / 2, z: Math.sin( TRENCH.angle ) * ( TRENCH.r0 + TRENCH.r1 ) / 2 };
 
 // ---- which zone
@@ -66,10 +73,10 @@ check( jump < 400, `no cliffs in the chart along a line out through the trench (
 const bites = ( x, z, depth, ids, n = 3000 ) => {
 
 	const h = zoneHabitat( habitatAt( { depth, reefDist: 999, pierDist: 999 } ), x, z, depth );
-	const got = {};
+	const got = {}, rng = seeded( 7 );
 	for ( let i = 0; i < n; i ++ ) {
 
-		const s = pickSpecies( h, 7, Math.random, ids );
+		const s = pickSpecies( h, 7, rng, ids );
 		got[ s ] = ( got[ s ] || 0 ) + 1;
 
 	}
