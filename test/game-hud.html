@@ -44,7 +44,7 @@ state.addFish( 'yellowtail', 1.31, 9 );
 state.addFish( 'grunt', 0.84, 9.5 );
 state.addFish( 'jack', 4.6, 10 );
 state.addFish( 'barracuda', 3.2, 11 );
-const game = { state, sellAll() { state.sell(); }, sell( ids ) { state.sell( ids ); }, fillOrder( id ) { return state.fillOrder( id ); }, dropOrder( id ) { return state.dropOrder( id ); }, enterTournament() { return state.enterTournament(); }, withdrawTournament() { return state.withdrawTournament(); } };
+const game = { state, sellAll( w ) { state.sell( null, w ); }, refuel( p ) { state.refuel( p ); }, sell( ids ) { state.sell( ids ); }, fillOrder( id ) { return state.fillOrder( id ); }, dropOrder( id ) { return state.dropOrder( id ); }, enterTournament() { return state.enterTournament(); }, withdrawTournament() { return state.withdrawTournament(); } };
 // ?view=online: the shared-sea view, online with two others (a stand-in for net/Multiplayer)
 if ( view === 'online' ) {
 
@@ -61,7 +61,7 @@ if ( view === 'quest' ) {
 	state.addFish( 'tang', 0.34, 9 );
 	state.addFish( 'chromis', 0.06, 9 );
 	game.completeQuest = ( id ) => state.completeQuest( id );
-	h.openStand( { kind: 'quest', giver: 'nalu', name: GIVERS.nalu.name } );
+	h.openStand( { kind: 'quest', giver: 'nalu', name: GIVERS.nalu.name, post: {} } );
 
 }
 

@@ -10,6 +10,7 @@ import { GameState } from './GameState.js';
 import { FishingRod } from './FishingRod.js';
 import { FishStand } from './FishStand.js';
 import { Chandlery } from './Chandlery.js';
+import { buildIslandPost } from './IslandPost.js';
 import { CatchDisplay } from './CatchDisplay.js';
 import { UPGRADES, fuelBurn } from './Gear.js';
 import { BOATS, boatTrack, BOAT_TRACKS } from './Boats.js';
@@ -86,10 +87,12 @@ export class Game {
 
 	}
 
-	// one quest giver on each outer island (Quests.js), on the beach that faces the home island
+	// one quest giver on each outer island (Quests.js), on the beach that faces the home island,
+	// behind the counter of the island's trading post (IslandPost.js)
 	addQuestGivers() {
 
 		this.givers = [];
+		this.posts = [];
 		const T = this.app.terrainData;
 		for ( const o of ( T && T.outer ) || [] ) for ( const g of Object.values( GIVERS ) ) {
 
@@ -103,6 +106,8 @@ export class Game {
 				character: g.character ? { url: `${ ( import.meta.env && import.meta.env.BASE_URL ) || '/' }models/characters/${ g.character }.glb`, lazy: true, range: 650, idle: 'idle_neutral_01', talk: 'gestic_talk_neutral_01', greet: 'wave_01' } : null,
 			} );
 			v.giver = g.id;
+			v.post = buildIslandPost( { scene: this.app.scene, terrain: T, colliders: this.app.colliders, spot: s, giver: g.id } );
+			this.posts.push( v.post );
 			if ( this.app.scene ) this.app.scene.add( v.group );
 			this.vendors.push( v );
 			this.givers.push( v );
@@ -287,9 +292,10 @@ export class Game {
 
 	}
 
-	refuel() {
+	// price: $ per litre, Marta's when not given (a trading post passes OUTPOST.fuelPrice)
+	refuel( price ) {
 
-		const l = this.state.refuel();
+		const l = this.state.refuel( price );
 		if ( l > 0 ) {
 
 			this._fuelOut = false;
@@ -708,9 +714,10 @@ export class Game {
 
 	}
 
-	sellAll() {
+	// where: 'joe' (the stand) or 'outpost' (an outer island's trading post)
+	sellAll( where = 'joe' ) {
 
-		const r = this.state.sell();
+		const r = this.state.sell( null, where );
 		if ( r.count ) this.toast( t( 'Sold {n} fish for ${v}', { n: r.count, v: r.total } ) );
 		if ( this.app.audio && this.app.audio.coin ) this.app.audio.coin();
 		return r;

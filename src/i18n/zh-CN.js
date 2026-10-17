@@ -938,6 +938,13 @@ export const ZH_CN = {
 	'Rod out · hold Cast to cast': '已取出钓竿 · 按住抛竿键抛出',
 	'Run aground · tap Get unstuck to get back into deep water': '搁浅了 · 点脱困回到深水',
 	'Tap to continue': '点一下继续',
+
+	// ── 外岛小卖部（game/IslandPost.js）────────────────────────────────────
+	'Sell the cooler': '卖掉鱼箱里的鱼',
+	'{n} fish · Joe would pay ${v}': '{n} 条鱼 · 乔那里能卖 ${v}',
+	'The cooler is empty': '鱼箱是空的',
+	'Sell · ${v}': '卖出 · ${v}',
+	'Trading post · fish {pct}% of their value, diesel ${p} / L': '小卖部 · 鱼按原价的 {pct}% 收，柴油 ${p} / 升',
 	'Turn your phone sideways to play': '把手机横过来玩',
 	'Leave helm   ·   W  sails up   ·   C  keep them up   ·   V  camera': '离开舵位   ·   W  升帆   ·   C  保持升帆   ·   V  切换视角',
 	'Your sailboat. <kbd>E</kbd> to board, <kbd>E</kbd> again at the tiller to sail: <kbd>W</kbd> raises the sails, <kbd>A</kbd><kbd>D</kbd> steer, <kbd>C</kbd> keeps them up. It can\'t sail straight into the wind: go across it (the boom shows which way it blows). No fuel needed.': '这是你的小帆船。<kbd>E</kbd> 上船，在舵柄旁再按 <kbd>E</kbd> 开船：<kbd>W</kbd> 升帆，<kbd>A</kbd><kbd>D</kbd> 转向，<kbd>C</kbd> 保持升帆。帆船不能正对着风走，要斜着或横着风走（看帆杆摆向就知道风往哪吹）。不用加油。',

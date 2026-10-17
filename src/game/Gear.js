@@ -48,6 +48,9 @@ export const UPGRADES = {
 };
 
 export const FUEL_PRICE = 1.5; // $ per litre of diesel at the chandlery
+// the trading posts on the outer islands (IslandPost.js): they buy fish for less than Joe (and pay no
+// reputation bonus) and sell diesel dearer, but they are out there where the fish are
+export const OUTPOST = { fishRate: 0.75, fuelPrice: 2.4 };
 // litres per second at the helm: idle plus a lot more at full rpm (40 L lasts ~25 min flat out)
 export function fuelBurn( rpm ) {
 

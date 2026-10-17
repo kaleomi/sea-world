@@ -1,5 +1,5 @@
 import { FISH, FISH_IDS, fishLengthCm } from './FishTable.js';
-import { UPGRADES, nextLevel, FUEL_PRICE } from './Gear.js';
+import { UPGRADES, nextLevel, FUEL_PRICE, OUTPOST } from './Gear.js';
 import { BOATS, BOAT_IDS, BOAT_TRACKS, boatTrack, nextBoatLevel, boatStats } from './Boats.js';
 import { FishPortrait } from './FishPortrait.js';
 import { TIERS, matchingFish, ordersFor } from './Orders.js';
@@ -894,14 +894,31 @@ GameHUD.prototype.renderQuest = function () {
 
 	}
 
+	// the island's trading post: sell the cooler (for less than Joe pays) and diesel (dearer than Marta's)
+	let trade = '';
+	if ( v.post ) {
+
+		const n = s.inventory.length, here = s.saleTotalAt( 'outpost' );
+		const fish = `<div class="gm-shop-row"><span>${ t( 'Sell the cooler' ) }<small>${ n ? t( '{n} fish · Joe would pay ${v}', { n, v: s.saleTotal } ) : t( 'The cooler is empty' ) }</small></span>${ n ? `<button class="gm-btn" data-sellhere>${ t( 'Sell · ${v}', { v: here } ) }</button>` : '' }</div>`;
+		const P = OUTPOST.fuelPrice, missing = s.stats.fuelL - s.fuelL;
+		const fuel = s.stats.sail ? '' : `<div class="gm-shop-row"><span>${ t( 'Diesel · ${p} / L', { p: P.toFixed( 2 ) } ) }<small>${ t( 'Tank: {n} of {cap} L', { n: s.fuelL.toFixed( 0 ), cap: s.stats.fuelL } ) }</small></span>${ missing > 0.5 ? `<button class="gm-btn" data-fuelhere ${ s.money < P ? 'disabled' : '' }>${ t( 'Fill · ${v}', { v: s.refuelCost( P ) } ) }</button>` : `<span class="gm-have">${ t( 'Full' ) }</span>` }</div>`;
+		trade = `<div class="gm-list gm-post"><div class="gm-shop-head">${ t( 'Trading post · fish {pct}% of their value, diesel ${p} / L', { pct: Math.round( OUTPOST.fishRate * 100 ), p: P.toFixed( 2 ) } ) }</div>${ fish }${ fuel }</div>`;
+
+	}
+
 	this.stand.innerHTML = `
 		<h2>${ t( v.name ) }</h2>
 		<p class="gm-sub">${ t( q ? g.greeting : g.done ) }</p>
 		${ body }
+		${ trade }
 		<div class="gm-foot"><button class="gm-btn is-ghost" data-close>${ t( 'Leave (E)' ) }</button>${ q ? `<button class="gm-btn" data-quest ${ ready ? '' : 'disabled' }>${ t( 'Hand in · ${v}', { v: q.reward } ) }</button>` : '' }</div>`;
 	this.stand.querySelector( '[data-close]' ).onclick = () => this.closeStand();
 	const b = this.stand.querySelector( '[data-quest]' );
 	if ( b ) b.onclick = () => this.game.completeQuest( g.id );
+	const sh = this.stand.querySelector( '[data-sellhere]' );
+	if ( sh ) sh.onclick = () => this.game.sellAll( 'outpost' );
+	const fh = this.stand.querySelector( '[data-fuelhere]' );
+	if ( fh ) fh.onclick = () => this.game.refuel( OUTPOST.fuelPrice );
 
 };
 

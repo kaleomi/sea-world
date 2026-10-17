@@ -1,5 +1,5 @@
 import { FISH, fishValue, fishLengthCm } from './FishTable.js';
-import { defaultUpgrades, gearStats, nextLevel, UPGRADES, FUEL_PRICE } from './Gear.js';
+import { defaultUpgrades, gearStats, nextLevel, UPGRADES, FUEL_PRICE, OUTPOST } from './Gear.js';
 import { medalFor, newMilestones, MILESTONES } from './Collection.js';
 import { newBoard, boardFromJSON, fillBoard, fillOrder, dropOrder, tierOf, TIERS } from './Orders.js';
 import { LEGENDS, legendBounty, legendsFromJSON } from './Legends.js';
@@ -247,28 +247,36 @@ export class GameState {
 
 	}
 
-	// what the stand pays for a fish (its value plus the reputation bonus)
-	saleValue( f ) {
+	// what the stand pays for a fish (its value plus the reputation bonus); an outer island's trading
+	// post ( where 'outpost' ) pays a set share of the value
+	saleValue( f, where = 'joe' ) {
 
+		if ( where === 'outpost' ) return Math.round( f.value * OUTPOST.fishRate );
 		return Math.round( f.value * ( 1 + this.saleBonus ) );
 
 	}
 
 	get saleTotal() {
 
+		return this.saleTotalAt( 'joe' );
+
+	}
+
+	saleTotalAt( where ) {
+
 		let v = 0;
-		for ( const f of this.inventory ) v += this.saleValue( f );
+		for ( const f of this.inventory ) v += this.saleValue( f, where );
 		return v;
 
 	}
 
-	// sell the given fish ids (all when omitted); returns the money made
-	sell( ids = null ) {
+	// sell the given fish ids (all when omitted) at Joe's or a trading post; returns the money made
+	sell( ids = null, where = 'joe' ) {
 
 		const keep = [], sold = [];
 		for ( const f of this.inventory ) ( ids === null || ids.includes( f.id ) ? sold : keep ).push( f );
 		let total = 0;
-		for ( const f of sold ) total += this.saleValue( f );
+		for ( const f of sold ) total += this.saleValue( f, where );
 		this.inventory = keep;
 		this.money += total;
 		this.save();
@@ -420,19 +428,20 @@ export class GameState {
 
 	}
 
-	refuelCost() {
+	// price: $ per litre (Marta's, or a trading post's OUTPOST.fuelPrice)
+	refuelCost( price = FUEL_PRICE ) {
 
-		return Math.ceil( ( this.stats.fuelL - this.fuelL ) * FUEL_PRICE );
+		return Math.ceil( ( this.stats.fuelL - this.fuelL ) * price );
 
 	}
 
 	// fill up as far as the money goes; returns litres bought
-	refuel() {
+	refuel( price = FUEL_PRICE ) {
 
 		const missing = this.stats.fuelL - this.fuelL;
-		const litres = Math.min( missing, Math.floor( this.money / FUEL_PRICE ) );
+		const litres = Math.min( missing, Math.floor( this.money / price ) );
 		if ( litres <= 0 ) return 0;
-		this.money -= Math.ceil( litres * FUEL_PRICE );
+		this.money -= Math.ceil( litres * price );
 		this.fuel = this.fuelL + litres;
 		if ( this.fuel >= this.stats.fuelL - 1e-3 ) this.fuel = null;
 		this.save();

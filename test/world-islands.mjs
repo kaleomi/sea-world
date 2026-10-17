@@ -2,7 +2,8 @@
 // (world/islands/, world/terrain/OuterIsland.js) through TerrainGPU and a Terrain mesh each,
 // rendered headless from a few cameras round them.
 //   node test/world-islands.mjs [outDir] [--view=name] [--veg] [--village]
-//   (--veg: with their vegetation; --village: with the village and the quest givers' homes, plus a view of each)
+//   (--veg: with their vegetation; --village: with the village and the quest givers' homes, plus a view of each;
+//   --posts: the trading post on each island's beach, with a view of each, post_<giver>)
 import { worldHarness, done } from './world-harness.mjs';
 import { TerrainData } from '../src/world/TerrainData.js';
 import { TerrainGPU } from '../src/world/TerrainGPU.js';
@@ -72,6 +73,40 @@ for ( const p of village ? village.outposts : [] ) {
 	const dx = Math.sin( p.yaw ), dz = Math.cos( p.yaw );
 	views[ `home_${ p.id }` ] = { pos: [ p.x + dx * far + dz * far * 0.35, y + up, p.z + dz * far - dx * far * 0.35 ], target: [ p.x, y + 1.5, p.z ] };
 	if ( p.kind === 'lighthouse' ) views.home_lighthouseNear = { pos: [ p.x + dx * 30 + dz * 12, p.floorY + 9, p.z + dz * 30 - dx * 12 ], target: [ p.x, p.floorY + 11, p.z ] };
+
+}
+
+// the trading posts (game/IslandPost.js) where each quest giver stands
+if ( process.argv.includes( '--posts' ) ) {
+
+	// the stall kit's files from public/, its images decoded with ImageMagick (Node has no decoder)
+	const fs = await import( 'node:fs' ), { execFileSync } = await import( 'node:child_process' );
+	const pub = new URL( '../public', import.meta.url ).pathname;
+	globalThis.__assetFile = async ( url ) => {
+
+		const b = fs.readFileSync( pub + url.replace( /^.*?\/models\//, '/models/' ) );
+		return b.buffer.slice( b.byteOffset, b.byteOffset + b.byteLength );
+
+	};
+	globalThis.__assetImage = async ( bytes ) => {
+
+		const [ w, h ] = execFileSync( 'identify', [ '-format', '%w %h', '-' ], { input: bytes } ).toString().split( ' ' ).map( Number );
+		const raw = execFileSync( 'convert', [ '-', '-depth', '8', 'RGBA:-' ], { input: bytes, maxBuffer: 1 << 28 } );
+		return { data: new Uint8Array( raw.buffer, raw.byteOffset, raw.byteLength ), width: w, height: h };
+
+	};
+	const { buildIslandPost } = await import( '../src/game/IslandPost.js' );
+	const { GIVERS, beachSpot } = await import( '../src/game/Quests.js' );
+	for ( const g of Object.values( GIVERS ) ) {
+
+		const o = data.outer.find( ( q ) => q.id === g.island ), s = o && beachSpot( o, 0, 0 );
+		if ( ! s ) continue;
+		const post = buildIslandPost( { scene: H.scene, terrain: data, spot: s, giver: g.id } );
+		await post.ready;
+		const dx = Math.sin( s.yaw ), dz = Math.cos( s.yaw );
+		views[ `post_${ g.id }` ] = { pos: [ post.x + dx * 7 + dz * 2.5, post.y + 2.2, post.z + dz * 7 - dx * 2.5 ], target: [ post.x, post.y + 1.1, post.z ] };
+
+	}
 
 }
 

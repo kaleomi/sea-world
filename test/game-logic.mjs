@@ -3,7 +3,7 @@ import { FISH, FISH_IDS, fishValue, fishLengthCm } from '../src/game/FishTable.j
 import { habitatAt, pickSpecies, rollWeight, biteDelay } from '../src/game/Bites.js';
 import { CatchMinigame } from '../src/game/CatchMinigame.js';
 import { GameState, SAVE_VERSION, migrate } from '../src/game/GameState.js';
-import { gearStats, defaultUpgrades, UPGRADES } from '../src/game/Gear.js';
+import { gearStats, defaultUpgrades, UPGRADES, OUTPOST } from '../src/game/Gear.js';
 
 let fails = 0;
 const ok = ( c, msg ) => {
@@ -171,6 +171,15 @@ ok( Object.keys( defaultUpgrades() ).length === Object.keys( UPGRADES ).length &
 	st.money = 1000;
 	ok( st.buy( 'fuel' ) && st.fuelL === 80, 'a new tank comes full' );
 	ok( st.buy( 'fishFinder' ) && st.stats.finder === true && st.buy( 'fishFinder' ) === null, 'fish finder: one level' );
+	// the island trading posts: fish at OUTPOST.fishRate of their value, dearer diesel
+	st.burn( 40 );
+	st.money = 0;
+	ok( st.refuelCost( OUTPOST.fuelPrice ) === Math.ceil( 40 * OUTPOST.fuelPrice ) && st.refuelCost( OUTPOST.fuelPrice ) > st.refuelCost(), 'diesel costs more at an island post' );
+	st.addFish( 'yellowtail', 4, 1 );
+	st.addFish( 'grunt', 0.8, 2 );
+	const joe = st.saleTotal, post = st.saleTotalAt( 'outpost' );
+	ok( post < joe && post === st.inventory.reduce( ( a, f ) => a + Math.round( f.value * OUTPOST.fishRate ), 0 ), 'an island post pays less than Joe' );
+	ok( st.sell( null, 'outpost' ).total === post && st.money === post && st.inventory.length === 0, 'selling the cooler at an island post' );
 
 }
 // ---- save safety: backup, broken saves, newer versions, fuel mid-trip
