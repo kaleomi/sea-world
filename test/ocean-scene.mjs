@@ -53,9 +53,10 @@ fn skyReflectionRadiance( dir: vec3f ) -> vec3f { return skyRadiance( dir, false
 
 export async function makeOceanScene( { W = 2560, H = 1267, terrain = true, caustics = true, floor = true, extra = null, sky = skyStub, clouds = null } = {} ) {
 
-	const T = terrain === true ? terrainStub : terrain || null;
-
 	await GPU.init( { headless: true } );
+	// terrain: true (the analytic stub), an object with a terrain module, or a function making one
+	// (called once the device exists)
+	const T = typeof terrain === 'function' ? await terrain() : terrain === true ? terrainStub : terrain || null;
 	G.sunDir.value.set( 0.45, 0.55, - 0.7 ).normalize();
 	G.sunColor.value.setRGB( 3.2, 3.0, 2.7 );
 	G.skyIrradiance.value.setRGB( 0.28, 0.36, 0.5 );

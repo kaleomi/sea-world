@@ -367,7 +367,9 @@ fn surfFoamShading( a: SurfFoamArgs ) -> SurfFoamInfo {
 		var lace = flat;
 		// lumps of tumbling whitewater (~0.6 m), only where there is whitewater
 		var lumps = 0.5;
-		let tangent = vec2f( - dir.y, dir.x );
+		// (the along-crest axis of the shore waves: across dir on the home island, across the swell
+		// elsewhere, so the lace doesn't shrink to noise on the outer islands, ~3 km from the origin)
+		let tangent = shoreAlongAxis( xz, dir );
 		// (compressed vertically: a front only a metre or two high must not show single lumps as columns)
 		// (the along-crest coordinate warped by low-frequency noise: the 3.5 m lace tile must not repeat as a
 		// row of identical lumps and spikes along the break)

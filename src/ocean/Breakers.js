@@ -4,7 +4,7 @@ import { GRAVITY, G } from '../engine/render/Frame.js';
 import { RHYTHM } from '../world/EcoRhythm.js';
 import { makeLaceTexture, LACE_TILE } from './SurfFoam.js';
 
-// Plunging breakers along the main beach.
+// Plunging breakers along the main beach, and along the beaches of the outer island the camera is at.
 //
 // Stations are laid out every ~0.6 m along the shoreline (CPU, once). Each frame a compute pass
 // marches every station's transect through the surf zone and finds the crests of the breaking
@@ -27,6 +27,17 @@ import { makeLaceTexture, LACE_TILE } from './SurfFoam.js';
 // shaded like the water (Fresnel sky reflection, light through the thin sheet, aerated streaks
 // that grow toward the tip) and blended over the water with premultiplied alpha. Its root lies
 // on the crest of the water surface and fades in there, so there is no visible seam.
+//
+// The outer islands (terrainData.outer) get their stations at load (islandStations: the coastline
+// traced on its height grid, the stretches the swell reaches, 1 m apart). They share one pool of
+// OUTER_CAP stations after the main beach's, which takes the whole island the camera is near (the
+// crest finder skips the stations further than SURF_RANGE from the camera, and the lips fade out
+// before that). Only one set
+// runs and draws at a time: the outer island's near it, the main beach's otherwise. A zero normal in
+// a station is a gap between two stretches of beach: no crest, and no lip joins it to its
+// neighbours. (An island with more stations than the pool would get those within SURF_RANGE of the
+// camera, refilled as it moves: the stations then change places, and spray in the air for a second
+// or two may take another crest's shadow.)
 
 //
 // WGSL: this.sprayShadowModule (installed as spray.waveShadow) defines
@@ -36,6 +47,12 @@ import { makeLaceTexture, LACE_TILE } from './SurfFoam.js';
 // sprayWrite, sprayRand), sky.module (skyReflectionRadiance), clouds.module (cloudsShadow).
 
 const NV = 20; // profile vertices across the lip (2 on the back of the crest + 18 along the curtain)
+const OUTER_CAP = 2048; // stations in the outer islands' pool (the largest island has ~2000)
+const SURF_RANGE = 250; // outer islands: crests are found at the stations this close to the camera (m)
+// (about where the spray stops, emitRange; the main beach's ~600 stations all run, an outer island's
+// within this range are about as many)
+const ISLAND_NEAR = 420; // an outer island's surf runs within this distance of its grid (m)
+const ISLAND_SPACING = 1.0; // m between the outer islands' stations
 
 const f = ( x ) => {
 
@@ -61,7 +78,7 @@ fn breakersFresnel( cosI: f32, eta: f32 ) -> f32 {
 
 export class Breakers {
 
-	constructor( renderer, { surface, shore, terrainData, sky, spray = null, clouds = null } ) {
+	constructor( renderer, { surface, shore, terrainData, sky, spray = null, clouds = null, outer = ( terrainData && terrainData.outer ) || [] } ) {
 
 		this.renderer = renderer;
 		this.surface = surface;
@@ -77,6 +94,10 @@ export class Breakers {
 			emitRange: [ 'f32', 240 ], // no emission beyond this camera distance
 			amplitude: [ 'f32', 1 ], // WaterSurface.amplitude (FFT displacement scale), copied each update
 			budget: [ 'f32', 0.3 ], // emission scale that keeps the spray ring from wrapping (see update)
+			first: [ 'f32', 0 ], // the stations the crest finder runs over: first, count
+			count: [ 'f32', 0 ],
+			range: [ 'f32', 1e9 ], // and only those this close to the camera
+			stationLen: [ 'f32', 0.6 ], // m of crest per station (spray rates, the spread along it)
 		} );
 		const F = this.uniforms.fields;
 		this.params = { spray: F.spray, sheet: F.sheet, emitRange: F.emitRange };
@@ -84,10 +105,27 @@ export class Breakers {
 
 		const t0 = performance.now();
 		const st = buildStations( terrainData );
-		this.NS = st.count;
+		this.NH = st.count; // the main beach's stations, then the outer islands' pool
+		this.outer = outer;
+		this.cap = outer.length && this.NH > 1 ? OUTER_CAP : 0;
+		this.NS = this.NH + this.cap;
 		this.spacing = st.spacing;
 		this.stationData = st.data;
-		this.stations = new StorageBuffer( { label: 'brkStations', count: Math.max( 1, this.NS ), type: 'vec4f', data: st.data.length ? st.data : new Float32Array( 4 ) } );
+		this.islandStations = new Map(); // island id -> Float32Array (islandStations)
+		if ( this.cap ) {
+
+			// (at load: tracing an island takes tens of ms, a dropped frame or two if it waited for the
+			// boat to arrive)
+			const T = shore && shore.terrain;
+			const shoreAt = T && T.shoreAt ? ( a, b, o ) => T.shoreAt( a, b, o ) : null;
+			for ( const o of outer ) this.islandStations.set( o.id, islandStations( o, { spacing: ISLAND_SPACING, shoreAt } ) );
+
+		}
+
+		this.pool = { island: null, x: 0, z: 0, n: 0 };
+		const data = new Float32Array( Math.max( 1, this.NS ) * 4 );
+		data.set( st.data );
+		this.stations = new StorageBuffer( { label: 'brkStations', count: Math.max( 1, this.NS ), type: 'vec4f', data } );
 		// per station and slot (wave parity): 3 x vec4
 		//   (root.xyz, b) (back.xyz, H) (dir.xz, trough y, wave id 1..1024 or 0 = none)
 		this.crest = new StorageBuffer( { label: 'brkCrest', count: Math.max( 1, this.NS * 6 ), type: 'vec4f' } );
@@ -161,9 +199,105 @@ fn breakersSprayShadow( p: vec3f, seedTag: f32 ) -> f32 {
 
 		this.cameraPos.value.copy( camera.position );
 		if ( this.surface && this.surface.amplitude ) this.uniforms.fields.amplitude.value = this.surface.amplitude.value;
-		if ( this.kernel ) this.kernel.dispatch( Math.ceil( this.NS / 64 ) );
+		const n = this._select( camera.position );
+		if ( this.kernel && n > 1 ) this.kernel.dispatch( Math.ceil( n / 64 ) );
 		this._budget();
 		if ( this.breakerBio ) this.breakerBio.value = RHYTHM.sample().glow;
+
+	}
+
+	// The stations that run and draw this frame: the outer island's pool when the camera is near one,
+	// the main beach's otherwise. Returns how many run.
+	_select( p ) {
+
+		let isle = null, best = ISLAND_NEAR;
+		if ( this.cap ) for ( const o of this.outer ) {
+
+			// distance from the camera to the island's grid
+			const d = Math.hypot( Math.max( o.x0 - p.x, 0, p.x - o.x0 - o.size ), Math.max( o.z0 - p.z, 0, p.z - o.z0 - o.size ) );
+			if ( d < best ) {
+
+				best = d;
+				isle = o;
+
+			}
+
+		}
+
+		let first = 0, n = this.NH;
+		if ( isle ) {
+
+			const P = this.pool;
+			if ( P.island !== isle || ( P.partial && Math.hypot( p.x - P.x, p.z - P.z ) > SURF_RANGE / 4 ) ) this._fillPool( isle, p.x, p.z );
+			first = this.NH;
+			n = P.n;
+
+		}
+
+		const F = this.uniforms.fields;
+		F.first.value = first;
+		F.count.value = n;
+		F.range.value = first ? SURF_RANGE : 1e9;
+		F.stationLen.value = first ? ISLAND_SPACING : this.spacing;
+		if ( this.lipStationLen ) {
+
+			this.lipStationLen.value = F.stationLen.value;
+			this.lipRange.value = F.range.value;
+
+		}
+
+		if ( this.segIndices ) this.mesh.geometry.setDrawRange( ( first ? this.NH - 1 : 0 ) * this.segIndices, Math.max( n - 1, 0 ) * this.segIndices );
+		return n;
+
+	}
+
+	// the island's stations into the pool: all of them, or (more than the pool holds) those within
+	// SURF_RANGE of (x, z), the runs cut at the radius ending in a gap
+	_fillPool( isle, x, z ) {
+
+		let all = this.islandStations.get( isle.id );
+		if ( ! all ) {
+
+			const T = this.shore && this.shore.terrain;
+			const t0 = performance.now();
+			all = islandStations( isle, { spacing: ISLAND_SPACING, shoreAt: T && T.shoreAt ? ( a, b, o ) => T.shoreAt( a, b, o ) : null } );
+			this.islandStations.set( isle.id, all );
+			this.lastIslandMs = performance.now() - t0;
+
+		}
+
+		const cap = this.cap;
+		if ( all.length <= cap * 4 ) {
+
+			this.stations.write( all, this.NH * 16 );
+			Object.assign( this.pool, { island: isle, x, z, n: all.length / 4, partial: false } );
+			return;
+
+		}
+
+		const out = this._poolData || ( this._poolData = new Float32Array( cap * 4 ) );
+		let R = SURF_RANGE, n = 0;
+		for ( let tries = 0; tries < 8; tries ++, R *= 0.8 ) {
+
+			n = 0;
+			let gap = true; // the last station written is a gap (none at the start)
+			for ( let k = 0; k < all.length && n < cap; k += 4 ) {
+
+				const on = ( all[ k + 2 ] !== 0 || all[ k + 3 ] !== 0 ) && ( all[ k ] - x ) ** 2 + ( all[ k + 1 ] - z ) ** 2 < R * R;
+				if ( ! on && gap ) continue;
+				out[ n * 4 ] = all[ k ]; out[ n * 4 + 1 ] = all[ k + 1 ];
+				out[ n * 4 + 2 ] = on ? all[ k + 2 ] : 0; out[ n * 4 + 3 ] = on ? all[ k + 3 ] : 0;
+				n ++;
+				gap = ! on;
+
+			}
+
+			if ( n < cap ) break;
+
+		}
+
+		if ( n ) this.stations.write( out.subarray( 0, n * 4 ), this.NH * 16 );
+		Object.assign( this.pool, { island: isle, x, z, n, partial: true } );
 
 	}
 
@@ -286,7 +420,8 @@ ${ spray ? '		breakersEmit( i, slot, root, dir, b, H, trough, c, m, depth, shore
 
 @compute @workgroup_size( WG_X, WG_Y, WG_Z )
 fn main( @builtin( global_invocation_id ) gid: vec3u ) {
-	let i = gid.x;
+	if ( gid.x >= u32( breakersP.count ) ) { return; }
+	let i = gid.x + u32( breakersP.first );
 	if ( i >= ${ NS }u ) { return; }
 	let st = breakersStations[ i ];
 	let o = st.xy;
@@ -295,6 +430,8 @@ fn main( @builtin( global_invocation_id ) gid: vec3u ) {
 	// clear both slots
 	breakersCrestW[ base + 2u ] = vec4f( 0.0 );
 	breakersCrestW[ base + 5u ] = vec4f( 0.0 );
+	// a gap between two stretches of beach, or too far away
+	if ( dot( n, n ) < 0.25 || length( o - breakersP.cameraPos.xz ) > breakersP.range ) { return; }
 
 	var sPrev = 0.0;
 	for ( var k = 0; k < ${ K }; k++ ) {
@@ -394,7 +531,7 @@ fn breakersTipAt( C: BrkCtx, r: f32 ) -> vec3f {
 }
 
 fn breakersAlong( C: BrkCtx, r: f32 ) -> vec3f {
-	return C.tg * ( ( r - 0.5 ) * ${ f( this.spacing * 1.15 ) } );
+	return C.tg * ( ( r - 0.5 ) * breakersP.stationLen * 1.15 );
 }
 
 fn breakersCount( rate: f32, gain: f32, seed: u32, salt: u32 ) -> u32 {
@@ -403,7 +540,8 @@ fn breakersCount( rate: f32, gain: f32, seed: u32, salt: u32 ) -> u32 {
 
 fn breakersEmit( i: u32, slot: u32, root: vec3f, dir: vec2f, b: f32, H: f32, trough: f32, c: f32, m: f32, depth: f32, bore: vec4f ) {
 	let camFade = smoothstep( breakersP.emitRange, breakersP.emitRange * 0.35, length( root - breakersP.cameraPos ) );
-	let gain = breakersP.spray * camFade * frame.dt;
+	// (the rates are per ${ this.spacing } m of crest)
+	let gain = breakersP.spray * camFade * frame.dt * breakersP.stationLen / ${ f( this.spacing ) };
 	// the many sub-pixel drops and ligaments take the ring budget; the few, visible spray and mist
 	// sprites always get their full rate
 	let gainD = gain * breakersP.budget;
@@ -580,17 +718,23 @@ fn breakersEmit( i: u32, slot: u32, root: vec3f, dir: vec2f, b: f32, H: f32, tro
 
 	_buildMesh() {
 
-		const NS = this.NS;
-		const nSeg = NS - 1;
+		// a segment between each two neighbouring stations: the main beach's, then the pool's (in this
+		// order: update() draws one range or the other)
+		const segs = [];
+		for ( let s = 0; s < this.NH - 1; s ++ ) segs.push( s );
+		for ( let s = this.NH; s < this.NS - 1; s ++ ) segs.push( s );
+		const nSeg = segs.length;
 		const vertsPerStrip = NV * 2;
 		const nStrips = nSeg * 2;
 		const ids = new Float32Array( nStrips * vertsPerStrip * 4 );
 		const pos = new Float32Array( nStrips * vertsPerStrip * 3 );
 		const index = new Uint32Array( nStrips * ( NV - 1 ) * 6 );
+		this.segIndices = 2 * ( NV - 1 ) * 6;
 		let p = 0, q = 0;
-		for ( let seg = 0; seg < nSeg; seg ++ ) for ( let slot = 0; slot < 2; slot ++ ) {
+		for ( let sn = 0; sn < nSeg; sn ++ ) for ( let slot = 0; slot < 2; slot ++ ) {
 
-			const v0 = ( seg * 2 + slot ) * vertsPerStrip;
+			const seg = segs[ sn ];
+			const v0 = ( sn * 2 + slot ) * vertsPerStrip;
 			for ( let side = 0; side < 2; side ++ ) for ( let k = 0; k < NV; k ++ ) {
 
 				ids[ p ++ ] = seg; ids[ p ++ ] = slot; ids[ p ++ ] = side; ids[ p ++ ] = k;
@@ -634,7 +778,7 @@ const BRK_NV: f32 = ${ f( NV ) };
 			side: 'double',
 			blending: 'premultiplied',
 			modules: [ lipModule ],
-			uniforms: { sheet: [ 'f32', 1 ], breakerBio: [ 'f32', 0 ] },
+			uniforms: { sheet: [ 'f32', 1 ], breakerBio: [ 'f32', 0 ], stationLen: [ 'f32', spacing ], range: [ 'f32', 1e9 ] },
 			textures: { brkLace: lace },
 			storage: { breakersCrest: this.crest },
 			attributes: { sheetId: 'vec4f' },
@@ -679,11 +823,12 @@ const BRK_NV: f32 = ${ f( NV ) };
 	// outward normal of the curtain (upper surface of the lip)
 	let slope = Yi * 2.0 * xl / ( Xi * Xi );
 	o.vLipN = normalize( vec3f( 0.0, 1.0, 0.0 ) + d3 * slope );
-	o.vLip = vec4f( pv, b, f32( st ) * ${ f( spacing ) }, Xi * q + Yi * q * q ); // w: curtain length (m)
+	o.vLip = vec4f( pv, b, f32( st ) * mat.stationLen, Xi * q + Yi * q * q ); // w: curtain length (m)
 	// the cap fades in over the crest; the whole lip fades out once it has become whitewater
 	let capA = smoothstep( -1.0, -0.1, pv );
 	// once the jet has re-entered the water the curtain is gone (the splash and the roller take over)
-	o.vLipFade = capA * smoothstep( 0.02, 0.12, q ) * ( 1.0 - smoothstep( 1.0, 1.2, b ) );
+	// (and out toward the range the crests are found in: the outer islands', SURF_RANGE)
+	o.vLipFade = capA * smoothstep( 0.02, 0.12, q ) * ( 1.0 - smoothstep( 1.0, 1.2, b ) ) * smoothstep( mat.range * 0.9, mat.range * 0.7, length( root.xz - frame.cameraPos.xz ) );
 	v.useWorld = true;
 	v.worldPos = select( vec3f( 0.0, -1e5, 0.0 ), P, valid );
 	v.worldNormal = o.vLipN;
@@ -790,6 +935,8 @@ const BRK_NV: f32 = ${ f( NV ) };
 		// the lip opacity multiplier is the material's uniform
 		this.params.sheet = mat.uniforms.sheet;
 		this.breakerBio = mat.uniforms.breakerBio;
+		this.lipStationLen = mat.uniforms.stationLen;
+		this.lipRange = mat.uniforms.range;
 		this.material = mat;
 
 		const mesh = this.mesh = new Mesh( geo, mat );
@@ -893,5 +1040,201 @@ export function buildStations( terrain, { x0 = - 175, x1 = 195, spacing = 0.6 } 
 	}
 
 	return { data: new Float32Array( out ), count: out.length / 4, spacing };
+
+}
+
+// marching squares: the edges the coastline joins in a cell, by its corner code (null: none, or a saddle)
+const MS_PAIRS = [ null, [ 0, 3 ], [ 0, 1 ], [ 1, 3 ], [ 1, 2 ], null, [ 0, 2 ], [ 2, 3 ], [ 2, 3 ], [ 0, 2 ], null, [ 1, 2 ], [ 1, 3 ], [ 0, 1 ], [ 0, 3 ], null ];
+
+// Stations along an outer island's beaches (OuterIsland: heights on a res x res grid from x0, z0,
+// texel m apart). The coastline is traced with marching squares on every `step`-th grid point
+// (closed loops), each loop smoothed and resampled every `spacing` m with the unit normal toward the
+// sea. Loops shorter than minLoop (rocks, sea stacks) are left out, and with shoreAt (TerrainGPU.shoreAt)
+// so are the stretches the swell does not reach (a lagoon, a lee shore: exposure below minExposure
+// out in front, where the crests would be). Returns a Float32Array of (x, z, nx, nz); a zero normal is
+// a gap between two stretches.
+export function islandStations( isle, { spacing = 1.0, step = 2, minLoop = 40, shoreAt = null, minExposure = 0.2 } = {} ) {
+
+	const { res, texel, heights } = isle;
+	const N = Math.floor( ( res - 1 ) / step ) + 1, d = texel * step;
+	const h = ( i, j ) => heights[ j * step * res + i * step ];
+
+	// land (height > 0) at the grid points used, in one plain pass (most of the cost: the rest only
+	// visits the cells the coastline crosses)
+	const land = new Uint8Array( N * N );
+	for ( let j = 0; j < N; j ++ ) {
+
+		const row = j * step * res;
+		for ( let i = 0; i < N; i ++ ) land[ j * N + i ] = heights[ row + i * step ] > 0 ? 1 : 0;
+
+	}
+
+	// crossing points on the grid edges (edge id 2 (j N + i) along +x from point (i, j), + 1 along +z),
+	// numbered as they are found
+	const ids = new Map(); // edge id -> crossing
+	const ex = []; // x, z per crossing
+	const link = []; // the two segments touching each crossing
+	const segs = [];
+	const edge = ( i, j, alongZ ) => {
+
+		const id = 2 * ( j * N + i ) + ( alongZ ? 1 : 0 );
+		let e = ids.get( id );
+		if ( e !== undefined ) return e;
+		const a = h( i, j ), b = alongZ ? h( i, j + 1 ) : h( i + 1, j );
+		const t = a / ( a - b );
+		e = ex.length / 2;
+		ids.set( id, e );
+		ex.push( isle.x0 + ( i * step + 0.5 ) * texel + ( alongZ ? 0 : t * d ), isle.z0 + ( j * step + 0.5 ) * texel + ( alongZ ? t * d : 0 ) );
+		link.push( - 1, - 1 );
+		return e;
+
+	};
+	const seg = ( e0, e1 ) => {
+
+		const s = segs.length / 2;
+		segs.push( e0, e1 );
+		link[ e0 * 2 + ( link[ e0 * 2 ] < 0 ? 0 : 1 ) ] = s;
+		link[ e1 * 2 + ( link[ e1 * 2 ] < 0 ? 0 : 1 ) ] = s;
+
+	};
+	// edges: 0 bottom (i,j)-(i+1,j), 1 right (i+1,j)-(i+1,j+1), 2 top (i,j+1)-(i+1,j+1), 3 left (i,j)-(i,j+1)
+	const E = ( k, i, j ) => k === 0 ? edge( i, j, false ) : k === 1 ? edge( i + 1, j, true ) : k === 2 ? edge( i, j + 1, false ) : edge( i, j, true );
+	for ( let j = 0; j < N - 1; j ++ ) for ( let i = 0; i < N - 1; i ++ ) {
+
+		const k = j * N + i;
+		const code = land[ k ] | ( land[ k + 1 ] << 1 ) | ( land[ k + N + 1 ] << 2 ) | ( land[ k + N ] << 3 );
+		if ( code === 0 || code === 15 ) continue;
+		const pair = MS_PAIRS[ code ];
+		if ( pair ) {
+
+			seg( E( pair[ 0 ], i, j ), E( pair[ 1 ], i, j ) );
+
+		} else {
+
+			// saddles: split by the centre
+			const mid = ( h( i, j ) + h( i + 1, j ) + h( i + 1, j + 1 ) + h( i, j + 1 ) ) > 0;
+			if ( ( code === 5 ) === mid ) {
+
+				seg( E( 0, i, j ), E( 1, i, j ) ); seg( E( 2, i, j ), E( 3, i, j ) );
+
+			} else {
+
+				seg( E( 0, i, j ), E( 3, i, j ) ); seg( E( 1, i, j ), E( 2, i, j ) );
+
+			}
+
+		}
+
+	}
+
+	// walk the segments into closed loops
+	const used = new Uint8Array( segs.length / 2 );
+	const out = [];
+	const sh = [ 0, 0, 0, 0 ];
+	const exposure = ( x, z ) => {
+
+		if ( ! shoreAt ) return 1;
+		shoreAt( x, z, sh );
+		return Math.hypot( sh[ 1 ], sh[ 2 ] );
+
+	};
+	for ( let s0 = 0; s0 < used.length; s0 ++ ) {
+
+		if ( used[ s0 ] ) continue;
+		const loop = [];
+		let s = s0, e = segs[ s0 * 2 ];
+		while ( s >= 0 && ! used[ s ] ) {
+
+			used[ s ] = 1;
+			e = segs[ s * 2 ] === e ? segs[ s * 2 + 1 ] : segs[ s * 2 ];
+			loop.push( ex[ e * 2 ], ex[ e * 2 + 1 ] );
+			s = link[ e * 2 ] === s ? link[ e * 2 + 1 ] : link[ e * 2 ];
+
+		}
+
+		const L = loop.length / 2;
+		let len = 0;
+		for ( let k = 0; k < L; k ++ ) len += Math.hypot( loop[ ( ( k + 1 ) % L ) * 2 ] - loop[ k * 2 ], loop[ ( ( k + 1 ) % L ) * 2 + 1 ] - loop[ k * 2 + 1 ] );
+		if ( len < minLoop ) continue;
+
+		// smooth (closed): the transects should not follow every wiggle of the waterline
+		let P = Float64Array.from( loop );
+		for ( let it = 0; it < 10; it ++ ) {
+
+			const Q = new Float64Array( P.length );
+			for ( let k = 0; k < L; k ++ ) for ( let c = 0; c < 2; c ++ ) Q[ k * 2 + c ] = ( P[ ( ( k + L - 1 ) % L ) * 2 + c ] + 2 * P[ k * 2 + c ] + P[ ( ( k + 1 ) % L ) * 2 + c ] ) * 0.25;
+			P = Q;
+
+		}
+
+		// resample by arc length, normals to the left of the walk
+		const st = [];
+		let acc = 0, next = 0;
+		for ( let k = 0; k < L; k ++ ) {
+
+			const ax = P[ k * 2 ], az = P[ k * 2 + 1 ], bx = P[ ( ( k + 1 ) % L ) * 2 ], bz = P[ ( ( k + 1 ) % L ) * 2 + 1 ];
+			const segLen = Math.hypot( bx - ax, bz - az );
+			if ( segLen < 1e-6 ) continue;
+			while ( next <= acc + segLen ) {
+
+				const t = ( next - acc ) / segLen;
+				st.push( ax + ( bx - ax ) * t, az + ( bz - az ) * t, - ( bz - az ) / segLen, ( bx - ax ) / segLen );
+				next += spacing;
+
+			}
+
+			acc += segLen;
+
+		}
+
+		// which side the sea is on (the same for the whole loop)
+		let vote = 0;
+		for ( let k = 0; k < st.length; k += 4 * 7 ) {
+
+			const [ x, z, nx, nz ] = st.slice( k, k + 4 );
+			vote += isle.heightAt( x + nx * 4, z + nz * 4 ) < isle.heightAt( x - nx * 4, z - nz * 4 ) ? 1 : - 1;
+
+		}
+
+		const sgn = vote >= 0 ? 1 : - 1;
+		// the stretches the swell reaches, without the short bits between gaps
+		const n = st.length / 4, on = new Uint8Array( n );
+		for ( let k = 0; k < n; k ++ ) {
+
+			const x = st[ k * 4 ], z = st[ k * 4 + 1 ], nx = st[ k * 4 + 2 ] * sgn, nz = st[ k * 4 + 3 ] * sgn;
+			on[ k ] = Math.max( exposure( x + nx * 12, z + nz * 12 ), exposure( x + nx * 30, z + nz * 30 ), exposure( x + nx * 55, z + nz * 55 ) ) >= minExposure ? 1 : 0;
+
+		}
+
+		// walked from a gap (k0), so no stretch runs across the end of the loop
+		const all = on.every( ( v ) => v );
+		const k0 = all ? 0 : on.indexOf( 0 );
+		const at = ( m ) => ( k0 + m ) % n;
+		for ( let m = 0; m < n; ) {
+
+			let e2 = m;
+			while ( e2 < n && on[ at( e2 ) ] === on[ at( m ) ] ) e2 ++;
+			if ( on[ at( m ) ] && ! all && e2 - m < 8 / spacing ) for ( let q = m; q < e2; q ++ ) on[ at( q ) ] = 0;
+			m = e2;
+
+		}
+
+		// all of it: one closed run (the first station repeated closes the lip); a gap after the loop,
+		// and one station per gap (the stations between two stretches are left out)
+		for ( let m = 0; m <= n; m ++ ) {
+
+			if ( m === n && ! all ) break;
+			const k = at( m );
+			const gap = ! on[ k ];
+			if ( gap && out.length && out[ out.length - 2 ] === 0 && out[ out.length - 1 ] === 0 ) continue;
+			out.push( st[ k * 4 ], st[ k * 4 + 1 ], gap ? 0 : st[ k * 4 + 2 ] * sgn, gap ? 0 : st[ k * 4 + 3 ] * sgn );
+
+		}
+
+		if ( out[ out.length - 2 ] !== 0 || out[ out.length - 1 ] !== 0 ) out.push( st[ k0 * 4 ], st[ k0 * 4 + 1 ], 0, 0 );
+
+	}
+
+	return new Float32Array( out );
 
 }

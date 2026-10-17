@@ -19,8 +19,9 @@ import { G, GRAVITY } from '../engine/render/Frame.js';
 //   fn shoreEvaluate( xz: vec2f, depth: f32, groundH: f32 ) -> ShoreSample          (with the normal: the water mesh)
 //   fn shoreEvaluateNoNormal( xz, depth, groundH ) -> ShoreSample                    (no normal: queries)
 //   fn shoreEvaluateWorld( xz, depth, groundH ) -> ShoreSample                       (a fixed world point: ShoreSim)
-//   struct ShorePhase { sh: vec4f, T: f32, dir: vec2f, exposure: f32, along: f32, s: f32 }
+//   struct ShorePhase { sh: vec4f, T: f32, dir: vec2f, exposure: f32, along: f32, s: f32, axis: vec2f }
 //   fn shorePhaseAt( xz: vec2f ) -> ShorePhase
+//   fn shoreAlongAxis( xz: vec2f, dir: vec2f ) -> vec2f        (the along-crest coordinate is dot( xz, axis ))
 //   fn shoreWaveAmp( m: f32, along: f32 ) -> f32
 //   fn shoreShape( u, A, d, lam ) -> vec4f                     ( x, y, foam, b )
 //   fn shoreCrest( A, d ) -> vec4f                             ( b, H, trough, lipThrow )   (crestParams)
@@ -77,12 +78,16 @@ fn ${ name }( xz: vec2f, depth: f32, groundH: f32 ) -> ShoreSample {
 	// offshore fade-in (FFT covers deep water) and fade on land (the swash sheet takes over there)
 	let env = smoothstep( 26.0, 13.0, d ) * smoothstep( -0.25, 0.05, d ) * sat( exposure * 1.4 ) * shoreP.enabled;
 
-	// finite difference along the propagation direction for the normal
+	// finite difference along the propagation direction for the normal (where the along-crest axis
+	// isn't across dir, the outer islands, a step along dir also moves along the crest's wobble)
 	let e = 0.15;
 	var face = 0.0;
 	var roller = 0.0;
 ${ mode === 'world' ? `	let r = shoreWorld( u, A, dB, lam, env );
-	let s0 = vec4f( r.z, r.y, r.x, r.w );` : mode === 'normal' ? `	let pair = shoreShapePair( u, - e / lam, A, dB, lam );
+	let s0 = vec4f( r.z, r.y, r.x, r.w );` : mode === 'normal' ? `	let kA = dot( ph.axis, dir ) * e;
+	var du = - e / lam;
+	if ( abs( kA ) > 1e-4 ) { du += shoreWobble( along + kA ) - shoreWobble( along ); }
+	let pair = shoreShapePair( u, du, A, dB, lam );
 	let s0 = pair.s0;
 	let s1 = pair.s1;
 	face = s1.z * env;
@@ -122,7 +127,7 @@ ${ mode === 'normal' ? `	{
 		let dAlong = select( 0.0, ( La - L0 ) / eL * 1.5, L0 * 1.5 + 0.2 > -0.3 );
 		let dSx = select( 0.0, ( Ls - L0 ) / eL * 1.5, L0 * 1.5 + 0.2 > -0.3 );
 		let dShore = - dSx; // d/d(shoreward) = - d/dsx
-		let g = ( vec2f( - dir.y, dir.x ) * dAlong + dir * dShore ) * amp * n.y;
+		let g = ( ph.axis * dAlong + dir * dShore ) * amp * n.y;
 		nShore = normalize( vec3f( n.x - g.x, max( n.y, 0.04 ), n.z - g.y ) );
 		} else {
 			nShore = normalize( vec3f( n.x, max( n.y, 0.04 ), n.z ) );
@@ -193,6 +198,11 @@ export class ShoreWaves {
 			dirMin: [ 'vec2f', new Vector2() ],
 			dirSize: [ 'f32', 1 ],
 			dirOn: [ 'f32', 0 ],
+			// the along-crest coordinate (shoreAlongAxis): across the swell's own direction outside the
+			// home grid (homeMin, homeSize), zero: across the local wave direction everywhere
+			swellAxis: [ 'vec2f', new Vector2() ],
+			homeMin: [ 'vec2f', new Vector2( - 1e9, - 1e9 ) ],
+			homeSize: [ 'f32', 2e9 ],
 		} );
 		const F = this.uniforms.fields;
 		this.period = F.period;
@@ -207,6 +217,23 @@ export class ShoreWaves {
 		this.dirMin = F.dirMin;
 		this.dirSize = F.dirSize;
 		this.time = G.time;
+		// The along-crest coordinate (the wobble of the crests, the wave heights along them, the bars and
+		// rips, the lobes of the swash, the lace on the breaking faces) is dot( xz, axis ). On the home
+		// island the axis runs across the local wave direction. That only works near the world origin
+		// and on gentle coasts: at the outer islands (~3 km out, small round islets) it changed by metres
+		// from one pixel to the next as the wave direction turned, and the swash front broke into teeth.
+		// Outside the home grid it runs across the swell's own direction instead: smooth everywhere, if a
+		// little less true where the waves wrap round a headland.
+		const sd = terrainGPU && terrainGPU.outer && terrainGPU.outer.length && terrainGPU.shoreField && terrainGPU.shoreField.swellDir;
+		if ( sd ) {
+
+			const l = Math.hypot( sd[ 0 ], sd[ 1 ] ) || 1;
+			F.swellAxis.value.set( - sd[ 1 ] / l, sd[ 0 ] / l );
+			F.homeMin.value.set( terrainGPU.origin, terrainGPU.origin );
+			F.homeSize.value = terrainGPU.size;
+
+		}
+
 		this.dirTexture = null;
 		// placeholder until buildDirTexture() (a binding needs a texture; dirOn selects the fallback)
 		this._dirPlaceholder = new Texture( { label: 'shoreDirPlaceholder', width: 1, height: 1, format: 'rgba32float', data: new Float32Array( [ 1, 0, 0, 1 ] ) } );
@@ -260,7 +287,7 @@ struct ShoreSample {
 
 struct ShoreMedium { scatter: vec3f, absorb: vec3f };
 
-struct ShorePhase { sh: vec4f, T: f32, dir: vec2f, exposure: f32, along: f32, s: f32 };
+struct ShorePhase { sh: vec4f, T: f32, dir: vec2f, exposure: f32, along: f32, s: f32, axis: vec2f };
 
 struct ShoreBreak {
 	db: f32, b: f32, Ash: f32, p: f32, meanP: f32, crestPeak: f32, yc: f32, yt: f32,
@@ -498,7 +525,9 @@ fn shoreSurfMedium( xz: vec2f, depth: f32 ) -> ShoreMedium {
 	var k = 0.0;
 	if ( depth < 4.5 && depth > -0.2 ) {
 		var expo: f32;
-		if ( shoreP.dirOn > 0.5 ) { expo = shoreDirAt( xz ).z; } else { expo = sat( length( terrainShoreSample( xz ).yz ) * 1.4 ); }
+		// (the direction texture covers the shore simulation's region, which follows the camera)
+		let uvD = ( xz - shoreP.dirMin ) / shoreP.dirSize;
+		if ( shoreP.dirOn > 0.5 && all( uvD > vec2f( 0.0 ) ) && all( uvD < vec2f( 1.0 ) ) ) { expo = shoreDirAt( xz ).z; } else { expo = sat( length( terrainShoreSample( xz ).yz ) * 1.4 ); }
 		k = smoothstep( 4.5, 1.2, depth ) * smoothstep( -0.2, 0.15, depth ) * expo * shoreP.turbidity * shoreP.enabled;
 	}
 	return ShoreMedium( vec3f( 0.9, 1.0, 0.85 ) * k, vec3f( 0.1, 0.2, 0.62 ) * k );
@@ -513,9 +542,18 @@ fn shorePhaseAt( xz: vec2f ) -> ShorePhase {
 	let dirE = vec2f( sh.y, sh.z );
 	let exposure = length( dirE );
 	let dir = dirE / max( exposure, 1e-4 );
-	let along = dot( xz, vec2f( - dir.y, dir.x ) );
+	let axis = shoreAlongAxis( xz, dir );
+	let along = dot( xz, axis );
 	let s = ( frame.time - T ) / shoreP.period + shoreWobble( along );
-	return ShorePhase( sh, T, dir, exposure, along, s );
+	return ShorePhase( sh, T, dir, exposure, along, s, axis );
+}
+
+// the axis of the along-crest coordinate at xz (dot( xz, axis )): across the local wave direction dir
+// on the home grid, across the swell's own direction outside it (see the constructor)
+fn shoreAlongAxis( xz: vec2f, dir: vec2f ) -> vec2f {
+	let f = ( xz - shoreP.homeMin ) / shoreP.homeSize;
+	let home = all( f >= vec2f( 0.0 ) ) && all( f <= vec2f( 1.0 ) );
+	return select( shoreP.swellAxis, vec2f( - dir.y, dir.x ), home || dot( shoreP.swellAxis, shoreP.swellAxis ) < 0.5 );
 }
 
 // ------------------------------------------------------------ light through thin crests
@@ -642,38 +680,61 @@ ${ evaluateCode( 'shoreEvaluateWorld', 'world' ) }
 	// Low-resolution texture of the wave direction and exposure over a region (one bilinear
 	// fetch from 4 loads instead of the 4 exact loads of the shore field for each of 4 corners) for
 	// per-pixel effects near the beach. region: { min: Vector2, size }. WGSL: shoreDirAt( xz ) ->
-	// vec3f( dir.x, dir.z, exposure ).
+	// vec3f( dir.x, dir.z, exposure ). Called again when the region moves (ShoreSim.track): the same
+	// texture is refilled. Over open sea (no shore field's grid in the region) it is switched off instead
+	// (shoreSurfMedium falls back to terrainShoreSample; there is no surf there to use it).
 	buildDirTexture( { min, size, res = 128 } ) {
 
-		// the shore field (T, dirX, dirZ, exposure / swash time) as float data on the CPU
+		// the shore field (T, dirX, dirZ, exposure / swash time) as float data on the CPU: TerrainGPU.shoreAt
+		// (home and outer islands), or a single field over the terrain's domain
 		const T = this.terrain;
 		const field = T.shoreField || null;
 		const data = field ? field.data : T.shoreData || T.shoreTexture?.image?.data || T.shoreTexture?.pendingData;
 		const fres = field ? field.res : T.shoreRes;
-		if ( ! data || ! fres ) {
+		if ( ! T.shoreAt && ( ! data || ! fres ) ) {
 
 			console.warn( 'ShoreWaves.buildDirTexture: no shore field data on the terrain; using terrainShoreSample instead' );
 			return null;
 
 		}
 
+		if ( T.shoreFieldsOverlap && ! T.shoreFieldsOverlap( min.x, min.y, size ) ) {
+
+			this.uniforms.fields.dirOn.value = 0;
+			return this.dirTexture;
+
+		}
+
 		const origin = T.origin, tsize = T.size;
-		const out = new Float32Array( res * res * 4 );
+		// (refilled in place when the region moves: no new array each time)
+		const out = this._dirData && this._dirData.length === res * res * 4 ? this._dirData : ( this._dirData = new Float32Array( res * res * 4 ) );
+		const sh = [ 0, 0, 0, 0 ];
 		for ( let j = 0; j < res; j ++ ) for ( let i = 0; i < res; i ++ ) {
 
 			const x = min.x + ( i + 0.5 ) / res * size, z = min.y + ( j + 0.5 ) / res * size;
-			const fx = Math.min( Math.max( ( x - origin ) / tsize * fres - 0.5, 0 ), fres - 1.001 );
-			const fz = Math.min( Math.max( ( z - origin ) / tsize * fres - 0.5, 0 ), fres - 1.001 );
-			const i0 = Math.floor( fx ), j0 = Math.floor( fz ), tx = fx - i0, tz = fz - j0;
-			const at = ( c ) => {
+			let dx, dz;
+			if ( T.shoreAt ) {
 
-				const a = data[ ( j0 * fres + i0 ) * 4 + c ], b = data[ ( j0 * fres + i0 + 1 ) * 4 + c ];
-				const cc = data[ ( ( j0 + 1 ) * fres + i0 ) * 4 + c ], d = data[ ( ( j0 + 1 ) * fres + i0 + 1 ) * 4 + c ];
-				return ( a * ( 1 - tx ) + b * tx ) * ( 1 - tz ) + ( cc * ( 1 - tx ) + d * tx ) * tz;
+				T.shoreAt( x, z, sh );
+				dx = sh[ 1 ]; dz = sh[ 2 ];
 
-			};
+			} else {
 
-			const dx = at( 1 ), dz = at( 2 );
+				const fx = Math.min( Math.max( ( x - origin ) / tsize * fres - 0.5, 0 ), fres - 1.001 );
+				const fz = Math.min( Math.max( ( z - origin ) / tsize * fres - 0.5, 0 ), fres - 1.001 );
+				const i0 = Math.floor( fx ), j0 = Math.floor( fz ), tx = fx - i0, tz = fz - j0;
+				const at = ( c ) => {
+
+					const a = data[ ( j0 * fres + i0 ) * 4 + c ], b = data[ ( j0 * fres + i0 + 1 ) * 4 + c ];
+					const cc = data[ ( ( j0 + 1 ) * fres + i0 ) * 4 + c ], d = data[ ( ( j0 + 1 ) * fres + i0 + 1 ) * 4 + c ];
+					return ( a * ( 1 - tx ) + b * tx ) * ( 1 - tz ) + ( cc * ( 1 - tx ) + d * tx ) * tz;
+
+				};
+
+				dx = at( 1 ); dz = at( 2 );
+
+			}
+
 			const e = Math.hypot( dx, dz ) || 1e-4;
 			const k = ( j * res + i ) * 4;
 			out[ k ] = dx / e;
@@ -684,8 +745,9 @@ ${ evaluateCode( 'shoreEvaluateWorld', 'world' ) }
 		}
 
 		// float data, read with exact loads: no sampler binding (fragment shaders are at their sampler limit)
-		const t = new Texture( { label: 'shoreDir', width: res, height: res, format: 'rgba32float', data: out } );
-		this.dirTexture = t;
+		let t = this.dirTexture;
+		if ( t && t.width === res ) t.upload( out );
+		else t = this.dirTexture = new Texture( { label: 'shoreDir', width: res, height: res, format: 'rgba32float', data: out } );
 		this.dirMin.value.copy( min );
 		this.dirSize.value = size;
 		this.uniforms.fields.dirOn.value = 1;

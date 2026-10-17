@@ -201,7 +201,53 @@ export class TerrainGPU {
 		this.outerShoreTexture.getGPU();
 		fields.forEach( ( f, i ) => this.outerShoreTexture.upload( f.data, { layer: i, layers: 1 } ) );
 		this.outerShoreRes = res;
+		this.outerShoreFields = fields;
 		this.uniforms.fields.outerShoreRes.value = res;
+
+	}
+
+	// the shore field at world (x, z) on the CPU, as terrainShoreSample: [ T, dirX, dirZ, exposure ]
+	// (bilinear; an outer island's field inside its grid, the home field elsewhere, clamped)
+	shoreAt( x, z, out = [ 0, 0, 0, 0 ] ) {
+
+		let f = this.shoreField, x0 = this.origin, z0 = this.origin, size = this.size;
+		const home = x >= x0 && z >= z0 && x <= x0 + size && z <= z0 + size;
+		if ( ! home && this.outerShoreFields ) {
+
+			for ( let k = 0; k < this.outer.length; k ++ ) if ( this.outer[ k ].contains( x, z ) && this.outerShoreFields[ k ] ) {
+
+				f = this.outerShoreFields[ k ];
+				x0 = this.outer[ k ].x0;
+				z0 = this.outer[ k ].z0;
+				size = this.outer[ k ].size;
+
+			}
+
+		}
+
+		if ( ! f ) return null;
+		const { data, res } = f;
+		const fx = Math.min( Math.max( ( x - x0 ) / size * res - 0.5, 0 ), res - 1.001 );
+		const fz = Math.min( Math.max( ( z - z0 ) / size * res - 0.5, 0 ), res - 1.001 );
+		const i = Math.floor( fx ), j = Math.floor( fz ), tx = fx - i, tz = fz - j;
+		const k = ( j * res + i ) * 4, kx = Math.min( i + 1, res - 1 ) - i, kz = ( Math.min( j + 1, res - 1 ) - j ) * res;
+		for ( let c = 0; c < 4; c ++ ) {
+
+			const a = data[ k + c ], b = data[ k + kx * 4 + c ], d = data[ k + kz * 4 + c ], e = data[ k + ( kx + kz ) * 4 + c ];
+			out[ c ] = ( a * ( 1 - tx ) + b * tx ) * ( 1 - tz ) + ( d * ( 1 - tx ) + e * tx ) * tz;
+
+		}
+
+		return out;
+
+	}
+
+	// does the square (x, z) .. (x + size, z + size) overlap a shore field's grid (home or an outer island's)?
+	shoreFieldsOverlap( x, z, size ) {
+
+		const hit = ( x0, z0, s ) => x < x0 + s && x + size > x0 && z < z0 + s && z + size > z0;
+		if ( this.shoreField && hit( this.origin, this.origin, this.size ) ) return true;
+		return ( this.outer || [] ).some( ( o, k ) => this.outerShoreFields && this.outerShoreFields[ k ] && hit( o.x0, o.z0, o.size ) );
 
 	}
 
@@ -279,6 +325,7 @@ fn main( @builtin( global_invocation_id ) gid: vec3u ) {
 
 	setShoreField( f ) {
 
+		this.shoreField = f; // kept for the CPU (shoreAt, ShoreWaves.buildDirTexture)
 		this.shoreRes = f.res;
 		if ( this.shoreTexture.width !== f.res ) {
 

@@ -238,6 +238,143 @@ export function computeShoreField( terrain, { res = 512, swellDir = [ 0, - 1 ], 
 
 	}
 
-	return { data, res, cellSize: h, origin, size, depth };
+	// On land the direction above is the gradient of the extended T, which grows one ring of cells per
+	// pass and so steps along any shoreline that does not run along the grid. The along-crest
+	// coordinate and the swash built on it broke into teeth on such beaches (the round islets of the
+	// outer islands). Land takes the wave direction and exposure of the nearest water instead
+	// (extended ring by ring, then smoothed), and the shoreline arrival time is smoothed on land too.
+	// Water cells keep their values.
+	const land = new Uint8Array( N );
+	for ( let k = 0; k < N; k ++ ) land[ k ] = isFinite( T[ k ] ) ? 0 : 1;
+	const V = new Float32Array( N * 3 ).fill( NaN ); // ( dir.x * exposure, dir.z * exposure, Tshore )
+	for ( let k = 0; k < N; k ++ ) {
+
+		if ( ! land[ k ] ) {
+
+			V[ k * 3 ] = data[ k * 4 + 1 ];
+			V[ k * 3 + 1 ] = data[ k * 4 + 2 ];
+
+		}
+
+		V[ k * 3 + 2 ] = data[ k * 4 + 3 ];
+
+	}
+
+	const prev = new Float32Array( N * 3 );
+	const nb = new Int32Array( 4 );
+	// the neighbours of cell (i, j) inside the grid, as index offsets into nb; returns how many
+	const nbs = ( i, j ) => {
+
+		let n = 0;
+		if ( i > 0 ) nb[ n ++ ] = - 1;
+		if ( i < res - 1 ) nb[ n ++ ] = 1;
+		if ( j > 0 ) nb[ n ++ ] = - res;
+		if ( j < res - 1 ) nb[ n ++ ] = res;
+		return n;
+
+	};
+	// the directions: rings of land cells from the shoreline inward (average of the known neighbours),
+	// as far up the beach as the swash can reach (the band; further inland stays as it was)
+	const BAND = 12;
+	const inBand = [];
+	const queued = new Uint8Array( N );
+	let ring = [];
+	for ( let j = 0; j < res; j ++ ) for ( let i = 0; i < res; i ++ ) {
+
+		const k = j * res + i;
+		if ( ! land[ k ] ) continue;
+		for ( let q = nbs( i, j ) - 1; q >= 0; q -- ) if ( ! land[ k + nb[ q ] ] ) {
+
+			ring.push( k );
+			queued[ k ] = 1;
+			break;
+
+		}
+
+	}
+
+	for ( let pass = 0; pass < BAND && ring.length; pass ++ ) {
+
+		const next = [];
+		for ( const k of ring ) {
+
+			const i = k % res, j = ( k / res ) | 0;
+			let sx = 0, sz = 0, n = 0;
+			for ( let q = nbs( i, j ) - 1; q >= 0; q -- ) {
+
+				const o = k + nb[ q ];
+				if ( ! Number.isNaN( V[ o * 3 ] ) && ! queued[ o ] ) {
+
+					sx += V[ o * 3 ];
+					sz += V[ o * 3 + 1 ];
+					n ++;
+
+				} else if ( land[ o ] && ! queued[ o ] ) {
+
+					queued[ o ] = 1;
+					next.push( o );
+
+				}
+
+			}
+
+			if ( n ) {
+
+				V[ k * 3 ] = sx / n;
+				V[ k * 3 + 1 ] = sz / n;
+
+			}
+
+			inBand.push( k );
+
+		}
+
+		// (the cells of this ring take part in the next one's averages)
+		for ( const k of ring ) queued[ k ] = 0;
+		for ( const k of next ) queued[ k ] = 1;
+		ring = next;
+
+	}
+
+	// smooth all three in the band (the water around stays as it is)
+	for ( let pass = 0; pass < 8; pass ++ ) {
+
+		prev.set( V );
+		for ( const k of inBand ) {
+
+			const i = k % res, j = ( k / res ) | 0;
+			const m = nbs( i, j );
+			for ( let c = 0; c < 3; c ++ ) {
+
+				let s = prev[ k * 3 + c ] * 2, w = 2;
+				for ( let q = 0; q < m; q ++ ) {
+
+					const v = prev[ ( k + nb[ q ] ) * 3 + c ];
+					if ( ! Number.isNaN( v ) && v < 1e4 ) {
+
+						s += v;
+						w ++;
+
+					}
+
+				}
+
+				if ( ! Number.isNaN( s ) && prev[ k * 3 + c ] < 1e4 ) V[ k * 3 + c ] = s / w;
+
+			}
+
+		}
+
+	}
+
+	for ( const k of inBand ) {
+
+		data[ k * 4 + 1 ] = V[ k * 3 ];
+		data[ k * 4 + 2 ] = V[ k * 3 + 1 ];
+		data[ k * 4 + 3 ] = V[ k * 3 + 2 ];
+
+	}
+
+	return { data, res, cellSize: h, origin, size, depth, swellDir: [ sdx, sdz ] };
 
 }

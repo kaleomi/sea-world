@@ -802,7 +802,14 @@ fn terrainWetness( xz: vec2f, h: f32 ) -> vec2f {
 		// drawn while any part of the view can be under water (the specks above the surface are dropped)
 		this.marineSnow.update( this.camera, this.camera.position.y < ( this.cameraWaterHeight ?? 0 ) + LENS_REACH );
 		this.airMotes.update( dt, this.camera, this.cameraWaterHeight ?? 0 );
-		if ( this.shoreSim ) this.shoreSim.update();
+		if ( this.shoreSim ) {
+
+			// over the main beach, or round the camera elsewhere (the outer islands' beaches)
+			this.shoreSim.track( this.camera.position.x, this.camera.position.z );
+			this.shoreSim.update();
+
+		}
+
 		this.underwaterLighting.update( this.camera );
 		this.breakers.update( this.camera );
 		this.spray.update();

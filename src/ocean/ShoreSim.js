@@ -2,6 +2,9 @@ import { Vector2 } from '../engine/math/index.js';
 import { GPU, Texture, StorageBuffer, UniformBlock, ShaderModule, ComputeKernel, commonModule } from '../engine/webgpu.js';
 import { makeLaceTexture, LACE_TILE } from './SurfFoam.js';
 
+const ZERO = new Vector2();
+const HOME_SLACK = 40; // m (track)
+
 // Eulerian state over the main beach, updated every frame on the GPU:
 //   r = foam carried by the water (made by the bore roller, the plunge point, the swash front and
 //       the spray falling back; advected with the actual flow: bores, uprush, backwash; thinned
@@ -10,6 +13,11 @@ import { makeLaceTexture, LACE_TILE } from './SurfFoam.js';
 //   b = foam stranded on the sand when the water drains away (pops over a few seconds)
 //   a = depth-averaged flow speed along the local wave direction (m/s): carries the foam pattern
 //       (SurfFoam flow map) and gives the divergence that thins the foam
+//
+// The region sits over the main beach (center, size) while the camera is near it; elsewhere
+// track( x, z ) keeps it centred on the camera (the outer islands' beaches, the rest of the home
+// coast), moved in whole texels with the state shifted along, so foam and wet sand stay where they
+// are in the world. New ground coming in starts with the damp band the terrain shows outside the region.
 //
 // WGSL (this.module, prefix shoreSim; no sampler bindings, loads only):
 //   fn shoreSimUvOf( xz: vec2f ) -> vec2f
@@ -29,6 +37,11 @@ export class ShoreSim {
 		this.terrain = terrainGPU;
 		this.shore = shore;
 		this.res = res;
+		this.size = size;
+		this.texel = size / res;
+		this.home = new Vector2( center.x - size / 2, center.y - size / 2 ); // the main beach's region (min corner)
+		this.homeKeep = size * 0.7; // camera this close to its centre: the region stays there
+		this.cell = new Vector2( 0, 0 ); // the region's min corner in texels from home
 		this.uniforms = new UniformBlock( 'ShoreSimParams', {
 			min: [ 'vec2f', new Vector2( center.x - size / 2, center.y - size / 2 ) ],
 			size: [ 'f32', size ],
@@ -242,6 +255,84 @@ fn main( @builtin( global_invocation_id ) gid: vec3u ) {
 	let residue = max( here.z * mix( exp( - dt / shoreSimP.residueLife ), 0.85, cov ), stranded );
 
 	textureStore( shoreSimOut, gid.xy, vec4f( foam, wet, residue, dot( vel, sw.dir ) ) );
+}
+`,
+		} );
+		this._buildShiftKernel();
+
+	}
+
+	// keep the region round the camera at (x, z) (see the header); true when it moved
+	track( x, z ) {
+
+		const half = this.size / 2;
+		// (HOME_SLACK either side of homeKeep: a camera on that line doesn't make it jump back and forth)
+		const atHome = this.cell.equals( ZERO );
+		let cx, cz;
+		if ( Math.hypot( x - this.home.x - half, z - this.home.y - half ) < this.homeKeep + ( atHome ? HOME_SLACK : - HOME_SLACK ) ) {
+
+			cx = this.home.x + half;
+			cz = this.home.y + half;
+
+		} else {
+
+			const m = this.uMin.value;
+			if ( Math.hypot( x - m.x - half, z - m.y - half ) < this.size * 0.2 && ! atHome ) return false;
+			cx = x;
+			cz = z;
+
+		}
+
+		const i = Math.round( ( cx - half - this.home.x ) / this.texel ), j = Math.round( ( cz - half - this.home.y ) / this.texel );
+		if ( i === this.cell.x && j === this.cell.y ) return false;
+		const old = this.uMin.value.clone();
+		this.uMin.value.set( this.home.x + i * this.texel, this.home.y + j * this.texel );
+		this._shift( i - this.cell.x, j - this.cell.y, old );
+		this.cell.set( i, j );
+		this.shore.buildDirTexture( { min: this.uMin.value, size: this.size } );
+		return true;
+
+	}
+
+	// move the state by (di, dj) texels (the region's corner moved that way from oldMin): what stays
+	// in the region is copied over, the rest starts as the damp band (no foam). The spray's foam
+	// deposits of the last frame are dropped (they were counted on the old texels).
+	_shift( di, dj, oldMin ) {
+
+		this.shiftParams.fields.offset.value.set( di, dj );
+		this.shiftParams.fields.oldMin.value.copy( oldMin );
+		this.shiftKernel.dispatch( this.shiftKernel.groups( this.res, this.res ) );
+		const enc = GPU.getEncoder();
+		enc.copyTextureToTexture( { texture: this.stateB.getGPU() }, { texture: this.stateA.getGPU() }, { width: this.res, height: this.res } );
+		enc.clearBuffer( this.deposit.getGPU() );
+
+	}
+
+	// (built with the rest, so the loading screen compiles it: not on the first move)
+	_buildShiftKernel() {
+
+		this.shiftParams = new UniformBlock( 'ShoreShiftParams', { offset: [ 'vec2f', new Vector2() ], oldMin: [ 'vec2f', new Vector2() ] } );
+		this.shiftKernel = new ComputeKernel( {
+			label: 'Shore Sim Shift',
+			modules: [ this.module, this.terrain.module ],
+			workgroupSize: [ 8, 8, 1 ],
+			bindings: {
+				shoreShift: { uniform: this.shiftParams },
+				shoreSimOut: { storageTexture: this.stateB, access: 'write' },
+			},
+			code: /* wgsl */`
+@compute @workgroup_size( WG_X, WG_Y, WG_Z )
+fn main( @builtin( global_invocation_id ) gid: vec3u ) {
+	if ( gid.x >= ${ this.res }u || gid.y >= ${ this.res }u ) { return; }
+	let src = vec2i( gid.xy ) + vec2i( shoreShift.offset );
+	var v: vec4f;
+	if ( all( src >= vec2i( 0 ) ) && all( src < vec2i( ${ this.res } ) ) ) {
+		v = textureLoad( shoreSimStateTex, src, 0 );
+	} else {
+		let p = shoreShift.oldMin + ( vec2f( src ) + 0.5 ) / SHORE_SIM_RES * shoreSimP.size;
+		v = vec4f( 0.0, smoothstep( 0.45, 0.0, terrainHeightAt( p ) ), 0.0, 0.0 );
+	}
+	textureStore( shoreSimOut, gid.xy, v );
 }
 `,
 		} );
