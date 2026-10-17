@@ -7,6 +7,7 @@ import { DEV } from './core/DevMode.js';
 import { mountProfile } from './net/StartProfile.js';
 import { saveProfile } from './net/Multiplayer.js';
 import { GPU } from './engine/gpu/GPU.js';
+import { TouchControls, touchWanted } from './ui/TouchControls.js';
 
 // ?bench runs in background tabs too (automation): rAF does not fire in a hidden page
 if ( /[?&]bench\b/.test( location.search ) ) {
@@ -66,6 +67,8 @@ window.__ui = ui;
 app.init( ( p, text, until ) => ui.setLoading( p, text, until ) ).then( async () => {
 
 	app.ui = new AppUI( app, ui );
+	// phones and tablets: a thumb stick, look by dragging, buttons for the rest (ui/TouchControls.js)
+	if ( touchWanted() && ! app.qs.has( 'bench' ) ) app.touch = new TouchControls( ui.root, app.input, { chat: () => !! ( app.net && app.net.status === 'online' ) } );
 	// a laptop running the game on its integrated graphics (Windows hands browsers the power-saving GPU
 	// unless told otherwise): say once how to switch to the dedicated card
 	const ai = ( GPU.adapter && GPU.adapter.info ) || {};
@@ -97,6 +100,7 @@ app.init( ( p, text, until ) => ui.setLoading( p, text, until ) ).then( async ()
 	ui.showStartOverlay( () => {
 
 		app.input.requestLock();
+		if ( app.touch ) app.touch.fullscreen( true );
 		if ( app.audio ) app.audio.resume();
 		if ( profile ) {
 

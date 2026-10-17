@@ -1,6 +1,7 @@
 import { Vector4, MathUtils } from '../engine/index.js';
 import { GPU, UniformBlock, Texture, StorageBuffer, ShaderModule, ComputeKernel, GRAVITY } from '../engine/webgpu.js';
 import { commonModule } from '../engine/render/wgsl/common.js';
+import { storageTextureLimit, mipLevelKernel, mipLevelGroups } from './ComputeMips.js';
 
 // Multi-cascade FFT ocean (Tessendorf) with a Horvath/JONSWAP spectrum.
 //
@@ -547,11 +548,14 @@ ${ stages }
 
 		};
 
+		// where a kernel may write only 4 storage textures (many phones), A stops at level 4 and levels
+		// 5..8 are made one per dispatch from the level above
+		const full = storageTextureLimit() >= 5;
 		const mipA = ( tex, t ) => new ComputeKernel( {
 			label: 'Ocean Mips A',
 			bindings: {
-				mipSrc: rw( this.mipSrc ), mipMid: rw( this.mipMid ),
-				out1: level( tex, 1 ), out2: level( tex, 2 ), out3: level( tex, 3 ), out4: level( tex, 4 ), out5: level( tex, 5 ),
+				mipSrc: rw( this.mipSrc ), ...( full ? { mipMid: rw( this.mipMid ), out5: level( tex, 5 ) } : {} ),
+				out1: level( tex, 1 ), out2: level( tex, 2 ), out3: level( tex, 3 ), out4: level( tex, 4 ),
 			},
 			workgroupSize: [ 16, 16, 1 ],
 			code: /* wgsl */`
@@ -574,9 +578,9 @@ ${ reduce( 's1', 's2', 8, 2, t ) }
 	workgroupBarrier();
 ${ reduce( 's2', 's3', 4, 3, t ) }
 	workgroupBarrier();
-${ reduce( 's3', 's4', 2, 4, t ) }
+${ full ? reduce( 's3', 's4', 2, 4, t ) : reduce( 's3', null, 2, 4, t ) }
 	workgroupBarrier();
-${ reduce( 's4', null, 1, 5, t ) }
+${ full ? reduce( 's4', null, 1, 5, t ) : '' }
 }`,
 		} );
 
@@ -603,7 +607,9 @@ ${ reduce( 's7', null, 1, 8, t ) }
 		} );
 
 		this.mipKernelsA = [ mipA( this.displacementTexture, 0 ), mipA( this.derivativeTexture, 1 ) ];
-		this.mipKernelsB = [ mipB( this.displacementTexture, 0 ), mipB( this.derivativeTexture, 1 ) ];
+		this.mipKernelsB = full ? [ mipB( this.displacementTexture, 0 ), mipB( this.derivativeTexture, 1 ) ] : [];
+		this.mipLevels = [];
+		if ( ! full ) for ( const tex of [ this.displacementTexture, this.derivativeTexture ] ) for ( let l = 5; l < tex.mipLevelCount; l ++ ) this.mipLevels.push( { k: mipLevelKernel( tex, l, tex.label ), groups: mipLevelGroups( Math.max( 1, N >> l ), C ) } );
 
 	}
 
@@ -628,6 +634,7 @@ ${ reduce( 's7', null, 1, 8, t ) }
 			this.columnKernel.dispatch( [ N, C, 1 ], { pass } );
 			for ( const k of this.mipKernelsA ) k.dispatch( [ N / 32, N / 32, C ], { pass } );
 			for ( const k of this.mipKernelsB ) k.dispatch( [ 1, 1, C ], { pass } );
+			for ( const L of this.mipLevels ) L.k.dispatch( L.groups, { pass } );
 
 		} );
 

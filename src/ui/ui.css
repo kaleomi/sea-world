@@ -381,6 +381,10 @@ body {
 
 /* ── root & primitives ─────────────────────────────────────────────────── */
 
+.tw-touch-hint {
+	display: none;
+}
+
 .tw-root {
 	position: fixed;
 	inset: 0;

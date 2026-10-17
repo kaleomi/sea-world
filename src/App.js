@@ -848,6 +848,7 @@ fn terrainWetness( xz: vec2f, h: f32 ) -> vec2f {
 
 		this.updateAudio( dt );
 		if ( this.ui ) this.ui.update( dt );
+		if ( this.touch ) this.touch.update( this );
 		this.input.endFrame();
 
 	}

@@ -17,6 +17,8 @@ check( startLevel( { vendor: 'nvidia', architecture: 'turing' } ) === 'high', 'a
 check( startLevel( { vendor: 'intel', architecture: 'gen-12lp' } ) === 'medium', 'Intel graphics start medium' );
 check( startLevel( { vendor: 'google', architecture: 'swiftshader', isFallbackAdapter: true } ) === 'low', 'a software adapter starts low' );
 check( startLevel( {} ) === 'medium', 'an unknown card starts medium' );
+check( startLevel( { vendor: 'qualcomm', architecture: 'adreno-7xx' } ) === 'low' && startLevel( { vendor: 'arm', architecture: 'valhall', description: 'Mali-G710' } ) === 'low', 'phone GPUs (Adreno, Mali) start low' );
+check( startLevel( { vendor: 'apple', architecture: 'common-3' }, true ) === 'low' && startLevel( { vendor: 'apple', architecture: 'common-3' } ) === 'medium', 'an iPhone starts low, a Mac medium' );
 check( nextLevel( 'high' ) === 'medium' && nextLevel( 'medium' ) === 'low' && nextLevel( 'low' ) === 'low', 'levels step down high → medium → low' );
 check( presetFor( 'low' ).renderScale < presetFor( 'medium' ).renderScale && presetFor( 'medium' ).renderScale < presetFor( 'high' ).renderScale, 'lower levels render fewer pixels' );
 check( ! presetFor( 'low' ).shadows && ! presetFor( 'low' ).ao && ! presetFor( 'low' ).ssr, 'low turns off shadows, AO and water reflections' );

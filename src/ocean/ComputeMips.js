@@ -1,4 +1,36 @@
-import { ComputeKernel } from '../engine/webgpu.js';
+import { GPU, ComputeKernel } from '../engine/webgpu.js';
+
+// storage textures one compute shader may write: 4 is WebGPU's default and what many phone GPUs (and
+// software adapters) give; desktop cards give 8 or more
+export const storageTextureLimit = () => ( GPU.limits && GPU.limits.maxStorageTexturesPerShaderStage ) || 4;
+
+// one mip level from the one above it (2x2 box filter), one storage texture: the fallback where a
+// kernel can't write five levels at once
+export function mipLevelKernel( tex, lvl, label ) {
+
+	return new ComputeKernel( {
+		label: `${ label } mip ${ lvl }`,
+		bindings: {
+			above: { texture: tex, view: { dimension: '2d-array', baseMipLevel: lvl - 1, mipLevelCount: 1 } },
+			out: { storageTexture: tex, access: 'write', view: { dimension: '2d-array', baseMipLevel: lvl, mipLevelCount: 1 } },
+		},
+		workgroupSize: [ 8, 8, 1 ],
+		code: /* wgsl */`
+@compute @workgroup_size( WG_X, WG_Y, WG_Z )
+fn main( @builtin( global_invocation_id ) id: vec3u ) {
+	let w = textureDimensions( out );
+	if ( id.x >= w.x || id.y >= w.y ) { return; }
+	let p = id.xy * 2u;
+	let v = ( textureLoad( above, p, id.z, 0 ) + textureLoad( above, p + vec2u( 1u, 0u ), id.z, 0 ) + textureLoad( above, p + vec2u( 0u, 1u ), id.z, 0 ) + textureLoad( above, p + vec2u( 1u, 1u ), id.z, 0 ) ) * 0.25;
+	textureStore( out, id.xy, id.z, v );
+}`,
+	} );
+
+}
+
+// dispatch size of mipLevelKernel for a level `w` texels wide
+export const mipLevelGroups = ( w, layers ) => [ Math.ceil( w / 8 ), Math.ceil( w / 8 ), layers ];
+
 
 // Box-filtered mip chain of a square power-of-two 2d / 2d-array / cube texture in two compute
 // dispatches, instead of a render pass per level and layer (generateMipmaps):
@@ -17,7 +49,10 @@ export class ComputeMips {
 		this.res = res;
 		this.layers = tex.dimension === '3d' ? 1 : tex.depth;
 		const levels = tex.mipLevelCount;
-		const top = Math.min( 5, levels - 1 );
+		// a phone or software adapter may allow only 4 storage textures per kernel: A then stops at
+		// level 4 and the rest go one level per dispatch
+		const maxOut = storageTextureLimit();
+		const top = Math.min( 5, levels - 1, maxOut );
 		const out = ( l ) => ( { storageTexture: tex, access: 'write', view: { dimension: '2d-array', baseMipLevel: l, mipLevelCount: 1 } } );
 		const src = ( l ) => ( { texture: tex, view: { dimension: '2d-array', baseMipLevel: l, mipLevelCount: 1 } } );
 		// threads (lx, ly) < width reduce 2x2 of `from` (row 2 * width) into level lvl (and `to`)
@@ -59,8 +94,13 @@ ${ codeA }
 
 		// level 5 is res / 32 texels square
 		this.kernelB = null;
+		this.levelKernels = [];
 		const w5 = res >> 5;
-		if ( levels > 6 && w5 > 1 ) {
+		if ( top < 5 || levels - 6 > maxOut ) {
+
+			for ( let l = top + 1; l < levels; l ++ ) this.levelKernels.push( { k: mipLevelKernel( tex, l, label ), groups: mipLevelGroups( Math.max( 1, res >> l ), this.layers ) } );
+
+		} else if ( levels > 6 && w5 > 1 ) {
 
 			const bB = { src5: src( 5 ) };
 			let codeB = '', decl = '';
@@ -101,6 +141,7 @@ ${ codeB }
 		const o = pass ? { pass } : undefined;
 		this.kernelA.dispatch( [ this.res / 32, this.res / 32, this.layers ], o );
 		if ( this.kernelB ) this.kernelB.dispatch( [ 1, 1, this.layers ], o );
+		for ( const L of this.levelKernels ) L.k.dispatch( L.groups, o );
 
 	}
 

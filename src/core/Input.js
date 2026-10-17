@@ -98,7 +98,8 @@ export class Input {
 
 	requestLock() {
 
-		if ( this.locked || ! this.dom.requestPointerLock ) return;
+		// (touch controls: there is no mouse to capture)
+		if ( this.locked || this.touch || ! this.dom.requestPointerLock ) return;
 		// raw mouse motion where supported: no OS acceleration, and none of the jumps Windows can send
 		let p;
 		try {

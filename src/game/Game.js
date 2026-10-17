@@ -64,7 +64,7 @@ export class Game {
 		this._fcT = 0;
 		this._warned = null;
 		// cruise control at the helm (Player.updateBoat, C)
-		if ( app.player ) app.player.onCruise = ( c ) => this.toast( c ? t( 'Cruise control on · C or S to stop' ) : t( 'Cruise control off' ), 1800 );
+		if ( app.player ) app.player.onCruise = ( c ) => this.toast( c ? t( app.touch ? 'Cruise control on · pull back to stop' : 'Cruise control on · C or S to stop' ) : t( 'Cruise control off' ), 1800 );
 		// the boat you're using (Boats.js), its engine or sails, and deck floodlights for night fishing
 		this.floods = [];
 		this._sailT = 0;
@@ -337,7 +337,7 @@ export class Game {
 
 			rod.equip( ! rod.equipped );
 			if ( ! rod.equipped ) this.cancelLine();
-			this.toast( rod.equipped ? 'Rod out · hold left mouse to cast' : 'Rod away', 1600 );
+			this.toast( rod.equipped ? ( app.touch ? 'Rod out · hold Cast to cast' : 'Rod out · hold left mouse to cast' ) : 'Rod away', 1600 );
 
 		}
 
@@ -591,7 +591,7 @@ export class Game {
 		if ( this._stuckT > 2.5 && ! this._stuckSaid ) {
 
 			this._stuckSaid = true;
-			this.toast( t( 'Run aground · press B to get back into deep water' ), 5000 );
+			this.toast( t( app.touch ? 'Run aground · tap Get unstuck to get back into deep water' : 'Run aground · press B to get back into deep water' ), 5000 );
 
 		}
 

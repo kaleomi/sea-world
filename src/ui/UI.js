@@ -2736,7 +2736,11 @@ export class UI {
 		const on = key != null && key !== '';
 		if ( on ) {
 
-			const k = String( key ), txt = t( text == null ? '' : String( text ) );
+			const k = String( key );
+			let txt = t( text == null ? '' : String( text ) );
+			// touch controls: the prompt is a button for its first action; the key hints after it are
+			// buttons of their own there
+			if ( this.root.classList.contains( 'is-touch' ) ) txt = txt.split( '·' )[ 0 ].trim();
 			if ( k !== this._pKey || txt !== this._pText ) {
 
 				this._pKey = k;

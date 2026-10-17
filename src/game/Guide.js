@@ -103,6 +103,48 @@ const CARDS = [
 	},
 ];
 
+// on a phone or tablet (ui/TouchControls.js) the same cards and tips name the buttons, not keys
+const WHERE = `<div class="gm-guide-where">
+			<div class="is-joe"><i></i><span>${ t( '<b>Joe</b> · fish stand by the pier' ) }</span><em data-where="joe"></em></div>
+			<div class="is-marta"><i></i><span>${ t( '<b>Marta</b> · chandlery by the boathouse' ) }</span><em data-where="marta"></em></div>
+		</div>`;
+const TOUCH_CARDS = [
+	CARDS[ 0 ],
+	{
+		eyebrow: t( 'Fishing' ),
+		title: t( 'Cast, strike, reel' ),
+		body: `<div class="gm-guide-list">
+			${ row( k( t( 'Rod' ) ), t( 'Take out the rod (by the water or on the boat)' ) ) }
+			${ row( k( t( 'Cast' ) ), t( 'Hold to wind up, let go to cast. Hold longer to cast farther' ) ) }
+			${ row( k( t( 'Strike' ) ), t( 'Tap when the bobber is <b>pulled under</b> (dips are only nibbles)' ) ) }
+			${ row( k( t( 'Hold to reel' ) ), t( 'Reel in. <b>Let go when the tension turns red</b>, or the line snaps' ) ) }
+			${ row( k( t( 'Take the line in' ) ), t( 'Reel an empty line back in' ) ) }
+			${ row( k( t( 'Cooler' ) ), t( 'Your cooler and fish log' ) ) }
+		</div>`,
+	},
+	{
+		eyebrow: t( 'Getting around' ),
+		title: t( 'Joe and Marta' ),
+		body: `<div class="gm-guide-list">
+			${ row( k( t( 'Left thumb' ) ), t( 'Move; push to the edge to run. Drag on the right half to look round' ) ) }
+			${ row( k( t( 'Prompt' ) ), t( 'Tap the button at the bottom to board the boat, take the helm or talk to Joe and Marta' ) ) }
+		</div>
+		${ WHERE }
+		<p style="margin:0;color:var(--tw-ink-3);font-size:var(--tw-fs-sm)">${ t( 'Both are marked on the map in the top right.' ) }</p>`,
+	},
+];
+
+const TOUCH_TIPS = {
+	rodOut: t( 'Hold <b>Cast</b> to wind up and let go to cast. Try deeper water, around the pier or over the reef.' ),
+	nibble: t( 'The bobber is dipping: something is <b>nibbling</b>. Wait until it is <b>pulled under</b>, then tap <b>Strike</b>.' ),
+	fishOn: t( '<b>Hold to reel</b>. When the tension needle nears the <b>red</b>, let go until it settles, then reel again.' ),
+	caught: t( 'Into the cooler (the bag at the top). Sell your catch to <b>Joe</b> at the fish stand by the pier: he is on the map.' ),
+	boat: t( 'Your boat. Tap <b>Board boat</b>, then <b>Take the helm</b>: left thumb up and down for the throttle, sideways to steer, and <b>Cruise</b> holds the speed. Diesel is sold by Marta.' ),
+	joe: t( '<b>Joe</b> buys your fish. Tap the button at the bottom to see what he will pay.' ),
+	sail: t( 'Your sailboat. Tap <b>Board boat</b>, then <b>Take the helm</b>: push the left thumb up to raise the sails and sideways to steer, and <b>Keep sails up</b> holds them. It can\'t sail straight into the wind: go across it (the boom shows which way it blows). No fuel needed.' ),
+	marta: t( '<b>Marta</b> sells boats, upgrades and diesel. Tap the button at the bottom to see her stock.' ),
+};
+
 const TIPS = {
 	rodOut: t( 'Hold the <b>left mouse button</b> to wind up and release to cast. Try deeper water, around the pier or over the reef.' ),
 	nibble: t( 'The bobber is dipping: something is <b>nibbling</b>. Wait until it is <b>pulled under</b>, then click to strike.' ),
@@ -145,10 +187,13 @@ export class Guide {
 		document.head.append( style );
 
 		this.seen = this._load();
+		this.touch = !! ( game.app && game.app.touch );
+		this.cards = this.touch ? TOUCH_CARDS : CARDS;
+		this.tips = this.touch ? { ...TIPS, ...TOUCH_TIPS } : TIPS;
 		this.el = h( 'div', 'gm-guide tw-interactive', `<div class="gm-guide-card tw-glass" role="dialog" aria-modal="true" aria-live="polite">
 			<div class="gm-guide-eyebrow"></div><h2></h2><div class="gm-guide-body"></div>
-			<div class="gm-guide-foot"><div class="gm-guide-dots">${ CARDS.map( () => '<span></span>' ).join( '' ) }</div>
-			<div class="gm-guide-btns"><span class="gm-guide-hint">${ t( 'Enter · Esc to skip' ) }</span><button type="button" class="gm-btn is-ghost gm-guide-skip">${ t( 'Skip' ) }</button><button type="button" class="gm-btn gm-guide-next">${ t( 'Next' ) }</button></div></div></div>` );
+			<div class="gm-guide-foot"><div class="gm-guide-dots">${ this.cards.map( () => '<span></span>' ).join( '' ) }</div>
+			<div class="gm-guide-btns"><span class="gm-guide-hint tw-keys-hint">${ t( 'Enter · Esc to skip' ) }</span><button type="button" class="gm-btn is-ghost gm-guide-skip">${ t( 'Skip' ) }</button><button type="button" class="gm-btn gm-guide-next">${ t( 'Next' ) }</button></div></div></div>` );
 		this.card = this.el.firstChild;
 		this.eyebrow = this.el.querySelector( '.gm-guide-eyebrow' );
 		this.title = this.el.querySelector( 'h2' );
@@ -237,13 +282,13 @@ export class Guide {
 	show( i ) {
 
 		this.step = i;
-		const c = CARDS[ i ];
+		const c = this.cards[ i ];
 		this.eyebrow.textContent = c.eyebrow;
 		this.title.textContent = c.title;
 		this.body.innerHTML = c.body;
 		this.dots.forEach( ( d, j ) => d.classList.toggle( 'is-on', j === i ) );
-		this.nextBtn.textContent = i === CARDS.length - 1 ? t( 'Let\'s fish' ) : t( 'Next' );
-		if ( this.minimap ) this.minimap.highlight( i === CARDS.length - 1 ? [ 'joe', 'marta' ] : [] );
+		this.nextBtn.textContent = i === this.cards.length - 1 ? t( 'Let\'s fish' ) : t( 'Next' );
+		if ( this.minimap ) this.minimap.highlight( i === this.cards.length - 1 ? [ 'joe', 'marta' ] : [] );
 		this._whereT = 0;
 		if ( ! this.open ) {
 
@@ -256,7 +301,7 @@ export class Guide {
 
 	next() {
 
-		if ( this.step < CARDS.length - 1 ) this.show( this.step + 1 );
+		if ( this.step < this.cards.length - 1 ) this.show( this.step + 1 );
 		else this.close();
 
 	}
@@ -314,7 +359,7 @@ export class Guide {
 
 			// live direction and distance to Joe and Marta
 			this._whereT -= dt;
-			if ( this._whereT <= 0 && this.step === CARDS.length - 1 ) {
+			if ( this._whereT <= 0 && this.step === this.cards.length - 1 ) {
 
 				this._whereT = 0.25;
 				const x = p.position.x, z = p.position.z;
@@ -372,7 +417,7 @@ export class Guide {
 			this._current = id;
 			this.seen[ id ] = true;
 			this._save();
-			this.coachText.innerHTML = TIPS[ id ];
+			this.coachText.innerHTML = this.tips[ id ];
 			this.coach.classList.add( 'is-on' );
 			this._coachT = 7.5;
 

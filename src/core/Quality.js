@@ -36,11 +36,13 @@ export function nextLevel( level ) {
 }
 
 // the level auto mode starts at: an NVIDIA or Radeon RX card starts high, everything else (integrated
-// graphics, Apple, unknown) medium, software adapters low; auto mode steps down from there if it must
-export function startLevel( info = {} ) {
+// graphics, Apple, unknown) medium, phones and software adapters low; auto mode steps down from there
+// if it must (and a player can raise it in the settings)
+export function startLevel( info = {}, mobile = false ) {
 
 	const s = `${ info.vendor || '' } ${ info.architecture || '' } ${ info.description || '' } ${ info.device || '' }`.toLowerCase();
 	if ( info.isFallbackAdapter || /swiftshader|llvmpipe|lavapipe|software|basic render/.test( s ) ) return 'low';
+	if ( mobile || /adreno|mali|powervr|immortalis|xclipse/.test( s ) ) return 'low';
 	if ( /nvidia|geforce|rtx|gtx|radeon rx/.test( s ) ) return 'high';
 	return 'medium';
 
@@ -83,6 +85,17 @@ function saveQuality( q ) {
 
 }
 
+// a phone or tablet (the browser says so, or a touch screen with no mouse)
+export function isMobile() {
+
+	if ( typeof navigator === 'undefined' ) return false;
+	if ( navigator.userAgentData && navigator.userAgentData.mobile ) return true;
+	if ( /Android|iPhone|iPad|iPod|Mobile/i.test( navigator.userAgent || '' ) ) return true;
+	// iPadOS asks for desktop pages: a Mac with a touch screen is an iPad
+	return /Macintosh/.test( navigator.userAgent || '' ) && ( navigator.maxTouchPoints || 0 ) > 1;
+
+}
+
 export class Quality {
 
 	constructor( app, adapterInfo = {} ) {
@@ -90,7 +103,7 @@ export class Quality {
 		this.app = app;
 		const saved = loadQuality();
 		this.mode = saved.mode;
-		this.level = saved.mode === 'auto' ? ( saved.level || startLevel( adapterInfo ) ) : saved.mode;
+		this.level = saved.mode === 'auto' ? ( saved.level || startLevel( adapterInfo, isMobile() ) ) : saved.mode;
 		this._t = 0;
 		this._acc = 0;
 		this._n = 0;

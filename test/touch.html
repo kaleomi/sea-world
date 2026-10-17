@@ -1,0 +1,90 @@
+<!doctype html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+	<title>Touch controls</title>
+	<style>html body { margin: 0; background: linear-gradient(180deg, #6fa7d6 0%, #9cc9e8 45%, #1f8fa3 46%, #0c5f77 100%) !important; height: 100vh; overflow: hidden; }</style>
+</head>
+<body>
+<script type="module">
+// Dev page: the phone controls (ui/TouchControls.js) over the real HUD shell, with a stand-in game.
+// ?view=walk | rod | bite | fight | helm | sail | swim | catch | shop | inv | stuck
+// window.__log collects the keys and buttons the controls pressed (test/touch-page.cjs drives it).
+import '../src/ui/ui.css';
+import { UI } from '../src/ui/UI.js';
+import { Input } from '../src/core/Input.js';
+import { TouchControls } from '../src/ui/TouchControls.js';
+import { GameHUD } from '../src/game/GameHUD.js';
+import { GameState } from '../src/game/GameState.js';
+import { Minimap } from '../src/game/Minimap.js';
+import { Chat } from '../src/net/Chat.js';
+
+const view = new URLSearchParams( location.search ).get( 'view' ) || 'walk';
+const canvas = document.createElement( 'canvas' );
+canvas.style.cssText = 'position:fixed;inset:0;width:100%;height:100%';
+document.body.append( canvas );
+const ui = new UI();
+await ui.hideLoader();
+ui.setMode( view === 'helm' || view === 'sail' || view === 'stuck' ? 'Boat · 3rd person' : view === 'swim' ? 'Swimming' : 'Walking' );
+const input = new Input( canvas );
+
+const state = new GameState( null );
+state.money = 184;
+state.addFish( 'yellowtail', 1.31, 9 );
+const app = {
+	player: { mode: 'walk', prompt: null, cruise: false },
+	game: { state, rod: { equipped: false, state: 'idle' }, fight: null, bite: false, landing: null, canFish: true, _stuckSaid: false },
+	boatCtl: { sailArea: 0, position: { x: 0, z: 0 } },
+	camera: { matrixWorld: { elements: new Array( 16 ).fill( 0 ) }, position: { x: 0, z: 0 } },
+	terrainData: { outer: [] },
+};
+const P = app.player, G = app.game;
+if ( view === 'walk' ) P.prompt = { key: 'E', text: 'Board boat' };
+if ( [ 'rod', 'bite', 'fight', 'catch' ].includes( view ) ) G.rod.equipped = true;
+if ( view === 'bite' ) { G.rod.state = 'floating'; G.bite = true; }
+if ( view === 'fight' ) { G.rod.state = 'floating'; G.fight = { tension: 0.6 }; }
+if ( view === 'catch' ) { G.rod.state = 'landing'; G.landing = { shown: true }; }
+if ( [ 'helm', 'sail', 'stuck' ].includes( view ) ) { P.mode = 'boat'; P.prompt = { key: 'E', text: 'Leave helm   ·   C  cruise   ·   V  camera' }; }
+if ( view === 'sail' ) app.boatCtl.sailArea = 24;
+if ( view === 'stuck' ) G._stuckSaid = true;
+if ( view === 'swim' ) P.mode = 'swim';
+
+const hud = new GameHUD( ui, { state, sellAll() {}, sell() {}, fillOrder() {}, dropOrder() {}, enterTournament() {}, withdrawTournament() {} } );
+hud.update( { fuel: { litres: 23, tank: 40 }, sonar: { depth: 12.4, fish: 0.5 }, fight: view === 'fight' ? { tension: 0.62, band: [ 0.35, 0.8 ], stamina: 0.55, distance: 11.4, surge: 0.1 } : null, casting: false, power: 0, bite: view === 'bite', aiming: true, tourney: null, clock: { hour: 9.5, weather: 'Clear' } } );
+new Minimap( ui.hud, { app } );
+const chat = new Chat( ui.hud, { say: () => true } );
+chat.system( '阿海 来到了这片海' );
+chat.add( '阿海', '你在哪个岛？', '#5fbf6a' );
+if ( view === 'helm' || view === 'sail' || view === 'stuck' ) ui.setBoatGauges( { visible: true, throttle: 0.6, rpm: 1800, speedKnots: 12.4, heading: 75 } );
+if ( view === 'shop' ) { state.money = 2400; hud.openStand( { kind: 'shop', name: 'Marta · Chandlery', greeting: 'Line, reels, a bigger hold, diesel. What do you need?' } ); }
+if ( view === 'inv' ) hud.toggleInventory( true );
+
+G.hud = hud;
+if ( view === 'catch' ) { state.addFish( 'mahi', 11.4, 12 ); hud.showCatch( state.lastCatch ); }
+const touch = new TouchControls( ui.root, input, { chat: () => true } );
+window.__touch = touch;
+window.__input = input;
+window.__log = [];
+// what reached the game each frame: key presses (hits), keys held, mouse buttons, look
+let mouse = '';
+const loop = () => {
+
+	touch.update( app );
+	if ( P.prompt ) ui.setPrompt( P.prompt.key, P.prompt.text ); else ui.setPrompt( null );
+	for ( const c of input.pressed ) window.__log.push( 'hit ' + c );
+	const m = ( input.mouseDown ? 'L' : '' ) + ( input.rightDown ? 'R' : '' );
+	if ( m !== mouse ) window.__log.push( 'mouse ' + ( m || '-' ) );
+	mouse = m;
+	window.__held = [ ...input.keys ].sort().join( ' ' );
+	const l = input.consumeLook();
+	if ( l.x || l.y ) window.__log.push( `look ${ Math.round( l.x ) } ${ Math.round( l.y ) }` );
+	input.endFrame();
+	requestAnimationFrame( loop );
+
+};
+loop();
+window.__ready = true;
+</script>
+</body>
+</html>

@@ -212,6 +212,20 @@ const CSS = /* css */`
 	.gm-catch.is-on .gm-badge, .gm-catch.is-on .gm-badge.is-record { animation: none; transform: rotate(-3deg); opacity: 1; }
 	.gm-catch.is-on .gm-splash i { animation: none; }
 }
+/* a phone held sideways: everything smaller so the card fits the height */
+@media (max-height: 520px) {
+	.gm-catch { padding: 6px var(--tw-edge); gap: 2px; }
+	.gm-catch-eyebrow { min-height: 0; margin-bottom: 2px; }
+	.gm-catch h2 { font-size: clamp(26px, 9vh, 44px); }
+	.gm-catch-sci { font-size: 12px; margin-top: 0; }
+	.gm-catch-stage { width: min(94vw, calc(36vh * 2.4)); }
+	.gm-catch-stats { margin-top: 0; }
+	.gm-stat { min-width: 84px; padding: 5px 10px 4px; }
+	.gm-stat b { font-size: 18px; margin-top: 1px; }
+	.gm-stat i { display: none; }
+	.gm-catch-note { margin-top: 4px; font-size: 13px; }
+	.gm-catch-foot { margin-top: 2px; }
+}
 @media (max-width: 640px) {
 	.gm-catch-stage { width: 96vw; }
 	.gm-catch-stats { gap: 6px; }
@@ -464,7 +478,7 @@ export class GameHUD {
 					<div class="gm-stat is-value"><span>${ t( legend ? 'Bounty' : 'Value' ) }</span><b>$${ info.value }</b><i>${ t( legend ? 'trophy wall' : info.kept ? 'in the cooler' : 'let go' ) }</i></div>
 				</div>
 				${ note }
-				<div class="gm-catch-foot"><kbd>${ t( 'Click' ) }</kbd> ${ t( 'or' ) } <kbd>E</kbd> ${ t( 'to continue' ) }<span class="gm-catch-timer"><span></span></span></div>
+				<div class="gm-catch-foot"><span class="tw-keys-hint"><kbd>${ t( 'Click' ) }</kbd> ${ t( 'or' ) } <kbd>E</kbd> ${ t( 'to continue' ) }</span><span class="tw-touch-hint">${ t( 'Tap to continue' ) }</span><span class="gm-catch-timer"><span></span></span></div>
 			</div>`;
 		// restart the entrance even when a card is already up
 		c.classList.remove( 'is-on' );

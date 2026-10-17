@@ -54,7 +54,7 @@ export class WorldMap {
 		const style = h( 'style' );
 		style.textContent = CSS;
 		document.head.append( style );
-		this.el = h( 'div', 'gm-world', `<div class="gm-world-box tw-glass"><div class="gm-world-head"><b>${ t( 'Map' ) }</b><span>${ t( 'Scroll to zoom · drag to move · M or Esc to close' ) }</span></div>
+		this.el = h( 'div', 'gm-world', `<div class="gm-world-box tw-glass"><div class="gm-world-head"><b>${ t( 'Map' ) }</b><span class="tw-keys-hint">${ t( 'Scroll to zoom · drag to move · M or Esc to close' ) }</span><span class="tw-touch-hint">${ t( 'Pinch to zoom · drag to move · tap outside to close' ) }</span></div>
 			<div class="gm-world-view"><canvas></canvas><div class="gm-forecast"></div></div></div>` );
 		this.forecastEl = this.el.querySelector( '.gm-forecast' );
 		this.view = this.el.querySelector( '.gm-world-view' );
@@ -66,45 +66,74 @@ export class WorldMap {
 		this.cz = 0;
 		this.scale = 0.2; // css px per metre
 		this._fit = 0.2;
-		// clicking the dark backdrop closes it
-		this.el.addEventListener( 'mousedown', ( e ) => {
+		// clicking (tapping) the dark backdrop closes it
+		this.el.addEventListener( 'pointerdown', ( e ) => {
 
 			if ( e.target === this.el ) this.toggle( false );
 
 		} );
-		this.view.addEventListener( 'wheel', ( e ) => {
+		// zoom by `k` round the point (x, y) on screen, which stays where it is
+		const zoomAt = ( x, y, k ) => {
 
-			e.preventDefault();
 			const r = this.view.getBoundingClientRect();
-			const mx = e.clientX - r.left - r.width / 2, my = e.clientY - r.top - r.height / 2;
-			// keep the point under the cursor where it is
+			const mx = x - r.left - r.width / 2, my = y - r.top - r.height / 2;
 			const wx = this.cx + mx / this.scale, wz = this.cz + my / this.scale;
-			this.scale = Math.min( 4, Math.max( this._fit * 0.8, this.scale * Math.exp( - e.deltaY * 0.0015 ) ) );
+			this.scale = Math.min( 4, Math.max( this._fit * 0.8, this.scale * k ) );
 			this.cx = wx - mx / this.scale;
 			this.cz = wz - my / this.scale;
 
-		}, { passive: false } );
-		let drag = null;
-		this.view.addEventListener( 'mousedown', ( e ) => {
+		};
 
-			if ( e.button !== 0 ) return;
-			drag = { x: e.clientX, y: e.clientY, cx: this.cx, cz: this.cz };
+		this.view.addEventListener( 'wheel', ( e ) => {
+
+			e.preventDefault();
+			zoomAt( e.clientX, e.clientY, Math.exp( - e.deltaY * 0.0015 ) );
+
+		}, { passive: false } );
+		// drag to move with a mouse or a finger, pinch with two fingers to zoom
+		const pts = new Map();
+		let pinch = 0;
+		this.view.style.touchAction = 'none';
+		this.view.addEventListener( 'pointerdown', ( e ) => {
+
+			if ( e.pointerType === 'mouse' && e.button !== 0 ) return;
+			this.view.setPointerCapture?.( e.pointerId );
+			pts.set( e.pointerId, { x: e.clientX, y: e.clientY } );
+			pinch = 0;
 			this.view.classList.add( 'is-drag' );
 
 		} );
-		window.addEventListener( 'mousemove', ( e ) => {
+		this.view.addEventListener( 'pointermove', ( e ) => {
 
-			if ( ! drag ) return;
-			this.cx = drag.cx - ( e.clientX - drag.x ) / this.scale;
-			this.cz = drag.cz - ( e.clientY - drag.y ) / this.scale;
+			const p = pts.get( e.pointerId );
+			if ( ! p ) return;
+			if ( pts.size === 1 ) {
+
+				this.cx -= ( e.clientX - p.x ) / this.scale;
+				this.cz -= ( e.clientY - p.y ) / this.scale;
+
+			}
+
+			p.x = e.clientX;
+			p.y = e.clientY;
+			if ( pts.size === 2 ) {
+
+				const [ a, b ] = [ ...pts.values() ];
+				const d = Math.hypot( a.x - b.x, a.y - b.y );
+				if ( pinch > 0 ) zoomAt( ( a.x + b.x ) / 2, ( a.y + b.y ) / 2, d / pinch );
+				pinch = d;
+
+			}
 
 		} );
-		window.addEventListener( 'mouseup', () => {
+		const up = ( e ) => {
 
-			drag = null;
-			this.view.classList.remove( 'is-drag' );
+			pts.delete( e.pointerId );
+			pinch = 0;
+			if ( ! pts.size ) this.view.classList.remove( 'is-drag' );
 
-		} );
+		};
+		for ( const ev of [ 'pointerup', 'pointercancel' ] ) this.view.addEventListener( ev, up );
 
 	}
 
